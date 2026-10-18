@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SmartDrugstore — Stock & Reports</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>SmartDrugstore</h1>
+    <span class="meta" id="meta">loading…</span>
+  </header>
+
+  <main>
+    <nav class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="stock">Stock</button>
+      <button role="tab" aria-selected="false" data-tab="reports">Reports</button>
+    </nav>
+
+    <!-- Stock -->
+    <section id="tab-stock">
+      <div class="cards" id="stockCards"></div>
+      <div class="controls">
+        <input type="search" id="search" placeholder="Search name, Thai name, or code…">
+        <select id="category"><option value="">All categories</option></select>
+        <label><input type="checkbox" id="lowOnly"> Low stock only</label>
+        <label><input type="checkbox" id="inactive"> Show inactive</label>
+      </div>
+      <div class="table-wrap">
+        <table id="stockTable">
+          <thead>
+            <tr>
+              <th data-sort="id">Code</th>
+              <th data-sort="name">Name</th>
+              <th data-sort="category">Category</th>
+              <th data-sort="unit">Unit</th>
+              <th class="num" data-sort="on_hand">On hand</th>
+              <th class="num" data-sort="reorder_point">Reorder</th>
+              <th class="num" data-sort="price">Price</th>
+              <th class="num" data-sort="price2">Price 2</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="empty hidden" id="stockEmpty">No matching products.</div>
+      </div>
+    </section>
+
+    <!-- Reports -->
+    <section id="tab-reports" class="hidden">
+      <div class="controls">
+        <select id="report">
+          <option value="low">Low stock (on hand &lt; reorder point)</option>
+          <option value="valuation">Stock valuation by category</option>
+          <option value="count">Product count by category</option>
+          <option value="expiry">Expiring within 90 days</option>
+          <option value="inactive">Inactive products</option>
+        </select>
+      </div>
+      <div class="cards" id="reportCards"></div>
+      <div class="table-wrap">
+        <table id="reportTable">
+          <thead><tr></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="empty hidden" id="reportEmpty">Nothing to show.</div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    Read-only snapshot served from <code>data/products.json</code>. Updated by the end-of-day export.
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

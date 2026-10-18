@@ -1,0 +1,7 @@
+{
+  "generated_at": "2026-10-18T19:55:00+07:00",
+  "source": "MySQL 4.0 / tb_product (sample data)",
+  "row_count": 6,
+  "currency": "THB",
+  "note": "Replace this file and products.json from the end-of-day export. See sync/EXPORT_CONTRACT.md."
+}
