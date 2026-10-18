@@ -43,6 +43,22 @@ That gives us the real table names, structures, and sizes — in particular the
 sales tables (`tb_sale`, `tb_saledetail`, and whatever the edit/void table is
 really called) behind the sales-total mismatch.
 
+## Batched reads (the real data path — no dumps)
+
+A large single query crashes the shop PC, but paged reads with a pause between
+pages are safe (tested). `Batch.gs` does exactly that — it never dumps:
+
+- **batchReadToSheet** — reads a table in `LIMIT offset,PAGE` pages (default 300)
+  with a `SLEEPMS` pause between them, writing rows into a new Google Sheet, and
+  stops on the last page. Good for small tables like `tb_product` (3000 rows).
+- **batchReadKeyset** — pages by an increasing key (`WHERE key > last LIMIT PAGE`)
+  instead of deep OFFSET. Lighter on large tables (sales history), because the
+  server doesn't scan skipped rows. Use this for the big tables.
+
+Edit the CONFIG block at the top of each function (table, columns, where,
+page size, pause) and run it. Keep `PAGE` small and `SLEEPMS` non-zero to stay
+gentle on MySQL 4.0.
+
 ## Later
 
 - `peek` — edit the `TABLE` / `N` at the top, run it, copy the TSV. Use it on a
