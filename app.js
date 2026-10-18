@@ -16,12 +16,14 @@ init();
 
 async function init() {
   try {
-    const [products, meta] = await Promise.all([
+    const [products, meta, stock] = await Promise.all([
       fetch("data/products.json").then((r) => r.json()),
       fetch("data/meta.json").then((r) => r.json()).catch(() => null),
+      fetch("data/stock.json").then((r) => r.json()).catch(() => null),
     ]);
     PRODUCTS = products.map(normalize);
-    renderMeta(meta);
+    overlayStock(stock);
+    renderMeta(meta, stock);
     buildCategoryFilter();
     wireUp();
     renderStock();
@@ -50,10 +52,24 @@ function normalize(p) {
 }
 function num(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
 
-function renderMeta(meta) {
-  if (!meta) { $("#meta").textContent = `${PRODUCTS.length} products`; return; }
-  const when = meta.generated_at ? new Date(meta.generated_at).toLocaleString() : "unknown";
-  $("#meta").textContent = `${INT.format(meta.row_count ?? PRODUCTS.length)} products · updated ${when}`;
+// Overlay the frequently-changing price + stock onto the catalogue, by id.
+// Lets the big products.json stay static while only stock.json is refreshed often.
+function overlayStock(stock) {
+  if (!stock || !stock.items) return;
+  for (const p of PRODUCTS) {
+    const s = stock.items[p.id];
+    if (!s) continue;
+    if (s.price != null) p.price = num(s.price);
+    if (s.on_hand != null) p.on_hand = num(s.on_hand);
+  }
+}
+
+function renderMeta(meta, stock) {
+  // Prefer the stock timestamp — that's the freshest thing on the page.
+  const ts = (stock && stock.generated_at) || (meta && meta.generated_at);
+  const when = ts ? new Date(ts).toLocaleString() : "unknown";
+  const count = (meta && meta.row_count) || PRODUCTS.length;
+  $("#meta").textContent = `${INT.format(count)} products · stock updated ${when}`;
 }
 
 function isLow(p) { return p.active && p.reorder_point > 0 && p.on_hand < p.reorder_point; }
