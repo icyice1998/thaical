@@ -43,6 +43,7 @@ function normalize(p) {
     category: p.category ?? "—",
     unit: p.unit ?? "",
     price: num(p.price),
+    price2: num(p.price2),
     cost: num(p.cost),
     on_hand: num(p.on_hand),
     reorder_point: num(p.reorder_point),
@@ -60,6 +61,7 @@ function overlayStock(stock) {
     const s = stock.items[p.id];
     if (!s) continue;
     if (s.price != null) p.price = num(s.price);
+    if (s.price2 != null) p.price2 = num(s.price2);
     if (s.on_hand != null) p.on_hand = num(s.on_hand);
   }
 }
@@ -158,9 +160,11 @@ function stockRow(p) {
     <td>${esc(p.id)}</td>
     <td>${nm}</td>
     <td>${esc(p.category)}</td>
+    <td>${esc(p.unit)}</td>
     <td class="num">${INT.format(p.on_hand)}</td>
     <td class="num">${p.reorder_point ? INT.format(p.reorder_point) : "—"}</td>
     <td class="num">${THB.format(p.price)}</td>
+    <td class="num">${p.price2 ? THB.format(p.price2) : "—"}</td>
     <td>${statusBadge(p)}</td>`;
   return tr;
 }

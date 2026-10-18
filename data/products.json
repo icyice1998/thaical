@@ -10,7 +10,8 @@
     "on_hand": 1840,
     "reorder_point": 500,
     "active": true,
-    "expiry": "2027-03-31"
+    "expiry": "2027-03-31",
+    "price2": 0.9
   },
   {
     "id": "P0002",
@@ -23,7 +24,8 @@
     "on_hand": 120,
     "reorder_point": 300,
     "active": true,
-    "expiry": "2026-11-30"
+    "expiry": "2026-11-30",
+    "price2": 3.15
   },
   {
     "id": "P0003",
@@ -36,7 +38,8 @@
     "on_hand": 60,
     "reorder_point": 200,
     "active": true,
-    "expiry": "2026-12-15"
+    "expiry": "2026-12-15",
+    "price2": 1.8
   },
   {
     "id": "P0004",
@@ -49,7 +52,8 @@
     "on_hand": 540,
     "reorder_point": 250,
     "active": true,
-    "expiry": "2027-06-30"
+    "expiry": "2027-06-30",
+    "price2": 3.6
   },
   {
     "id": "P0005",
@@ -62,7 +66,8 @@
     "on_hand": 14,
     "reorder_point": 20,
     "active": true,
-    "expiry": "2026-10-31"
+    "expiry": "2026-10-31",
+    "price2": 108.0
   },
   {
     "id": "P0006",
@@ -75,6 +80,7 @@
     "on_hand": 0,
     "reorder_point": 0,
     "active": false,
-    "expiry": null
+    "expiry": null,
+    "price2": 1.35
   }
 ]
