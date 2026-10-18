@@ -1,3 +1,6 @@
 node_modules/
 *.log
 .DS_Store
+*.class
+sync/db/env.local
+sync/db/env.local.bat
