@@ -89,3 +89,17 @@ admin account. Close the tunnel when done.
   blocks the raw TCP port. Run on the shop PC instead (option 1).
 - **Auth/handshake error** — confirm the connector jar is the 5.1.x in `lib/`,
   not a modern one; modern drivers reject 4.0's old-password auth.
+
+## Build products.json + stock.json (InventoryExport)
+
+`InventoryExport.java` runs the three 4.0-safe queries (tb_product,
+SUM tb_productall, AVG tb_recivedetail), joins them by `product_id` in a
+HashMap, and writes `products.json` + `stock.json`.
+
+```
+run-export.bat                 REM writes into this folder
+set OUT_DIR=..\..\data & run-export.bat   REM writes straight into the site's data/
+```
+
+(Linux/macOS: `OUT_DIR=../../data ./run-export.sh`.) Then commit the two files,
+or push them with the Apps Script publisher / a git commit.
