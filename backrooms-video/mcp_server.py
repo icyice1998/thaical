@@ -241,6 +241,25 @@ def set_character_images(project_id: str, character: str, portrait: str | None =
 
 
 @mcp.tool()
+def set_cast_sheet(project_id: str, path: str, rows: list[str] | None = None, explorer: str | None = None,
+                   portraits: str = "ai-photo") -> dict:
+    """Use ONE image holding the whole cast (e.g. made in ChatGPT): a grid with one row per character and 4 equal
+    columns: portrait mouth closed | portrait mouth open | full body front | full body back.
+    rows: character ids top to bottom (default: script order). explorer: who walks in 3D (default: first row).
+    portraits: "ai-photo" (smooth, for photo/anime art) or "ai-pixel" (pixelated). Then run generate_assets."""
+    s = _load(project_id)
+    rows = rows or list(s["voices"])
+    bad = [r for r in rows if r not in s["voices"]]
+    if bad:
+        raise ValueError(f"unknown characters {bad}; have {list(s['voices'])}")
+    a = s.setdefault("assets", {})
+    a["cast_sheet"] = {"path": path, "rows": rows, "explorer": explorer or rows[0]}
+    a["portraits"] = portraits
+    _save(project_id, s)
+    return {"ok": True, "cast_sheet": a["cast_sheet"], "next": "generate_assets"}
+
+
+@mcp.tool()
 def generate_assets(project_id: str) -> list:
     """Generate the AI cover art, portraits, textures and music set by set_assets (cached). Returns a summary and preview images.
     Run generate_voice afterwards so the music is mixed in."""

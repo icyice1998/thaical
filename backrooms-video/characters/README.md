@@ -12,3 +12,11 @@ Put one folder per character here, for example `characters/mind/`, and point a p
 
 Two portrait frames give lip-sync. With only `portrait.png`, the image pulses with the voice and shows a level meter instead.
 Plain backgrounds on sprites are removed automatically.
+
+## One image for the whole cast (`cast.png`)
+
+The easiest option: one landscape image (3:2, for example 1536x1024) laid out as a grid.
+- One row per character. The first row is the character who walks in 3D.
+- Four equal columns: portrait with mouth closed | portrait with mouth open | full body front | full body back.
+
+Use it with the MCP tool `set_cast_sheet(project_id, "characters/cast.png", rows=["mind", "ton"])`, then run `generate_assets`.

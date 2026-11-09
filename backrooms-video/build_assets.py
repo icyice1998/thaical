@@ -6,6 +6,7 @@
     "portraits": "code" | "ai-pixel" | "ai-photo",   # uses each character's "portrait_prompt"
                                                      # or its own files: voices.<id>.images (see below)
     "textures":  "code" | "ai",                      # wall/floor/ceiling tiles for level0 and ward
+    "cast_sheet": {"path": "characters/cast.png", "rows": ["mind", "ton"], "explorer": "mind"},  # one image, 4x2 grid
     "music":     {"prompt": "...", "bpm": 70, "seconds": 40, "volume": 0.5, "model": "lyria-3-clip-preview"}
   }
 
@@ -69,6 +70,8 @@ def _crop_to(im, w, h, top_bias=0.0):
 
 
 def _load_user(ref):
+    if isinstance(ref, Image.Image):
+        return ref
     if ref.startswith(("http://", "https://")):
         import urllib.request
         with urllib.request.urlopen(ref, timeout=60) as r:
@@ -132,11 +135,36 @@ def main():
         except mp.MediaUnavailable as e:
             out["warnings"].append(f"cover: {e}")
 
+    # cast sheet: one image, a grid with one row per character (default 4 columns:
+    # portrait closed | portrait mouth open | full body front | full body back)
+    sheet_imgs = {}
+    cs = cfg.get("cast_sheet")
+    if cs:
+        try:
+            sheet = _load_user(cs["path"]).convert("RGBA")
+            rows = cs.get("rows") or list(s["voices"])
+            cols = cs.get("columns", ["portrait", "portrait_talk", "sprite_front", "sprite_back"])
+            cw, ch = sheet.width / len(cols), sheet.height / len(rows)
+            pad = cs.get("gutter", 0.03)  # trim gutters/frame lines between cells
+            for r, who in enumerate(rows):
+                if who not in s["voices"]: continue
+                cells = {}
+                for c, pose in enumerate(cols):
+                    if not pose: continue
+                    box = (int((c + pad) * cw), int((r + pad) * ch), int((c + 1 - pad) * cw), int((r + 1 - pad) * ch))
+                    cells[pose] = sheet.crop(box)
+                if who != cs.get("explorer", rows[0]):
+                    cells.pop("sprite_front", None); cells.pop("sprite_back", None)
+                sheet_imgs[who] = cells
+            print(f"  cast sheet: {sheet.width}x{sheet.height}, rows={rows}, explorer={cs.get('explorer', rows[0])}")
+        except (FileNotFoundError, OSError, KeyError) as e:
+            out["warnings"].append(f"cast sheet: {e}")
+
     # portraits + sprites from the user's own files (take priority over generated ones)
     mode = cfg.get("portraits", "code")
     out["sprites"] = {}
     for key, v in s["voices"].items():
-        imgs = v.get("images") or {}
+        imgs = {**sheet_imgs.get(key, {}), **(v.get("images") or {})}
         try:
             if imgs.get("portrait"):
                 pm = "ai-pixel" if mode == "ai-pixel" else "ai-photo"
