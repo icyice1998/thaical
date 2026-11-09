@@ -22,6 +22,7 @@ except ImportError:  # mcp 1.x
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import tts_providers as tp  # noqa: E402
+import media_providers as mp  # noqa: E402
 
 PROJECTS = os.environ.get("VIDEO_PROJECTS_DIR", os.path.join(HERE, "projects"))
 os.makedirs(PROJECTS, exist_ok=True)
@@ -44,7 +45,8 @@ JOBS = {}
 
 mcp = FastMCP("backrooms-video", instructions=(
     "Make narrated vertical short videos rendered from code. Order: list_styles → get_style_guide (read it fully) → "
-    "create_project → set_script → set_scenes → generate_voice → preview_frame (look before rendering) → "
+    "create_project → set_script → set_scenes → (optional) set_assets → generate_assets → generate_voice → "
+    "preview_frame (look before rendering) → "
     "render (confirm the plan with the user first) → job_status until done, then give the user the output path."))
 
 
@@ -120,7 +122,8 @@ def create_project(title: str, subtitle: str = "", style: str = "backrooms-retro
 def set_script(project_id: str, characters: dict, lines: list[dict]) -> dict:
     """Set characters and dialogue.
 
-    characters: {"ton": {"name": "ต้น", "voice": "<cartesia id>", "look": "operator", "speed": 1.05, "color": "#7fb8ff"}, ...}
+    characters: {"ton": {"name": "ต้น", "voice": "<cartesia id>", "look": "operator", "speed": 1.05, "color": "#7fb8ff",
+                         "portrait_prompt": "(optional, for AI portraits) young Thai man with headset ..."}, ...}
     lines: [{"who": "ton", "text": "...", "emotion": "scared", "gap_before": 0.35}, ...]
     Replaces existing lines (and their cues).
     """
@@ -137,6 +140,7 @@ def set_script(project_id: str, characters: dict, lines: list[dict]) -> dict:
         v = {"name": c.get("name", k), "provider": c.get("provider", "cartesia"), "voice": c["voice"],
              "model": c.get("model", "sonic-3"), "speed": float(c.get("speed", 1.05)), "look": look,
              "color": c.get("color", DEFAULT_COLORS[i % 3]), "fallback": c.get("fallback", [])}
+        if c.get("portrait_prompt"): v["portrait_prompt"] = c["portrait_prompt"]
         if v["provider"] == "edge":
             v.update({"rate": c.get("rate", "+12%"), "pitch": c.get("pitch", "+0Hz")})
         voices[k] = v
@@ -180,6 +184,70 @@ def set_scenes(project_id: str, cues: list[dict], replace: bool = True) -> dict:
         s["lines"][0].setdefault("cues", []).insert(0, {"type": "scene", "value": "level0", "at": "start", "offset": -1.2})
     _save(project_id, s)
     return {"ok": True, "cues": sum(len(ln.get("cues", [])) for ln in s["lines"]), "next": "generate_voice"}
+
+
+@mcp.tool()
+def set_assets(project_id: str, image_provider: str = "openai", cover_prompt: str | None = None,
+               portraits: str = "code", textures: str = "code", music_prompt: str | None = None,
+               music_bpm: int | None = None, music_seconds: int = 40, music_volume: float = 0.5,
+               music_model: str | None = None) -> dict:
+    """Optional AI media (OpenAI or Google images, Google Lyria music). Keys come from the server's environment.
+
+    image_provider: "openai" (gpt-image) | "google" (Imagen)
+    cover_prompt: scene for the 9:16 cover art (title is drawn on top); omit for a cover made from the 3D scene
+    portraits: "code" | "ai-pixel" | "ai-photo" (needs portrait_prompt on each character in set_script)
+    textures: "code" | "ai" (wall/floor/ceiling tiles for level0 and ward)
+    music_prompt: Lyria prompt for the background score, e.g. "slow dark ambient, detuned synth pad, distant piano"; omit for the synthesized drone
+    music_model: "lyria-3-clip-preview" (default) | "lyria-3-pro-preview" | "realtime"
+    """
+    if image_provider not in mp.IMAGE_PROVIDERS:
+        raise ValueError(f"image_provider must be one of {list(mp.IMAGE_PROVIDERS)}")
+    if portraits not in ("code", "ai-pixel", "ai-photo") or textures not in ("code", "ai"):
+        raise ValueError("portraits: code|ai-pixel|ai-photo, textures: code|ai")
+    s = _load(project_id)
+    a = {"image_provider": image_provider, "portraits": portraits, "textures": textures}
+    if cover_prompt: a["cover"] = {"prompt": cover_prompt}
+    if music_prompt:
+        a["music"] = {"prompt": music_prompt, "seconds": music_seconds, "volume": music_volume}
+        if music_bpm: a["music"]["bpm"] = music_bpm
+        if music_model: a["music"]["model"] = music_model
+    s["assets"] = a
+    _save(project_id, s)
+    av = mp.available()
+    need = []
+    if (cover_prompt or portraits != "code" or textures != "code") and not av[f"{image_provider}_images"]:
+        need.append("OPENAI_API_KEY" if image_provider == "openai" else "GEMINI_API_KEY")
+    if music_prompt and not av["lyria_music"]: need.append("GEMINI_API_KEY")
+    return {"ok": True, "assets": a, "missing_keys": sorted(set(need)), "next": "generate_assets, then generate_voice"}
+
+
+@mcp.tool()
+def generate_assets(project_id: str) -> list:
+    """Generate the AI cover art, portraits, textures and music set by set_assets (cached). Returns a summary and preview images.
+    Run generate_voice afterwards so the music is mixed in."""
+    d = _pdir(project_id)
+    r = subprocess.run([sys.executable, os.path.join(HERE, "build_assets.py"), d], capture_output=True, text=True, timeout=1800)
+    if r.returncode:
+        raise RuntimeError((r.stdout + r.stderr)[-2000:])
+    a = json.load(open(os.path.join(d, "build", "assets.json")))
+    out = [json.dumps({"cover_art": bool(a["cover_art"]), "portraits": list(a["portraits"]), "textures": list(a["textures"]),
+                       "music": bool(a["music"]), "warnings": a["warnings"]}, ensure_ascii=False)]
+    import base64 as b64, io
+    from PIL import Image as PILImage
+    def thumb(src, size):
+        im = PILImage.open(io.BytesIO(b64.b64decode(src.split(",", 1)[1]))).convert("RGB")
+        im = im.resize(size, PILImage.NEAREST if im.width < 100 else PILImage.LANCZOS)
+        buf = io.BytesIO(); im.save(buf, "JPEG", quality=80); return Image(data=buf.getvalue(), format="jpeg")
+    if a["cover_art"]: out += ["cover art", thumb(a["cover_art"], (270, 480))]
+    for k, p in a["portraits"].items(): out += [f"portrait {k}", thumb(p["src"], (200, 220))]
+    if a["textures"]:
+        ims = [PILImage.open(io.BytesIO(b64.b64decode(v.split(",", 1)[1]))).convert("RGB").resize((96, 96), PILImage.NEAREST)
+               for v in a["textures"].values()]
+        sheet = PILImage.new("RGB", (96 * len(ims), 96))
+        for i, im in enumerate(ims): sheet.paste(im, (96 * i, 0))
+        buf = io.BytesIO(); sheet.save(buf, "JPEG", quality=85)
+        out += ["textures: " + ", ".join(a["textures"]), Image(data=buf.getvalue(), format="jpeg")]
+    return out
 
 
 @mcp.tool()
@@ -246,6 +314,9 @@ def _run_job(job_id, project_id, d):
         name = re.sub(r"[^\w\-]+", "-", f"{project_id}").strip("-") + ".mp4"
         final = os.path.join(d, name)
         shutil.copy(os.path.join(d, "build", "out.mp4"), final)
+        cover = os.path.join(d, "build", "cover.jpg")
+        if os.path.exists(cover):
+            shutil.copy(cover, os.path.join(d, "cover-9x16.jpg")); job["cover_path"] = os.path.join(d, "cover-9x16.jpg")
         job.update(state="done", progress=1.0, output_path=final, title=title,
                    size_mb=round(os.path.getsize(final) / 1e6, 1), finished=time.time())
     except Exception as e:  # noqa: BLE001

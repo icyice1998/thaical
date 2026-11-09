@@ -12,12 +12,16 @@ A vertical short (1080x1920, 30 fps, about 85 s) in the style of a retro-FPS "fo
 | `set_script` | Characters (voice, portrait `look`, colour) and dialogue lines with emotions |
 | `set_scenes` | Cues per line: scene, walk, lights, flashlight, entity, glitch, mission, toast, endcard, and so on |
 | `generate_voice` | Cartesia TTS, line timing, and the ambience/SFX mix |
+| `set_assets` / `generate_assets` | Optional AI media: cover art, portraits and textures from OpenAI `gpt-image` or Google Imagen, plus a background score from Google Lyria |
 | `preview_frame` | Returns stills as images for checking before rendering |
 | `render` / `job_status` | Background render to `projects/<id>/<id>.mp4` |
 
 ```bash
 pip install -r requirements.txt          # plus Node + playwright + ffmpeg
-export CARTESIA_API_KEY=...              # never commit it
+export CARTESIA_API_KEY=...              # voices        (never commit keys)
+export OPENAI_API_KEY=...                # optional: gpt-image art
+export GEMINI_API_KEY=...                # optional: Imagen art + Lyria music
+# MEDIA_MOCK=1 swaps every AI image/music call for local placeholders (offline testing)
 # Claude Code: the repo's .mcp.json registers it automatically, or:
 claude mcp add backrooms-video -e CARTESIA_API_KEY=$CARTESIA_API_KEY -- python3 backrooms-video/mcp_server.py
 # Remote clients (Streamable HTTP):
@@ -31,7 +35,8 @@ Then ask Claude, for example: "ใช้ backrooms-video ทำคลิป 60 �
 ```
 script.json ──> build_audio.py ──> build/timeline.json + build/audio.wav
                                            │
-renderer.html + renderer.js <── capture.js ┘──> build/out.mp4
+renderer.html + renderer.js <── capture.js ┘──> build/out.mp4 + build/cover.jpg
+(optional, before build_audio) build_assets.py ──> build/assets.json + build/assets/music.wav
 ```
 
 | File | What it does |
@@ -39,6 +44,8 @@ renderer.html + renderer.js <── capture.js ┘──> build/out.mp4
 | `script.json` | Dialogue lines plus cues (scene, mission, toast, lights, flashlight, entity, glitch, whiteout, endcard, walk speed) |
 | `tts_providers.py` | Cartesia (`/tts/bytes`, sonic-3, `generation_config` speed/emotion) and edge-tts, cached by hash |
 | `mcp_server.py` | The MCP server described above (supports mcp 1.x and 2.x) |
+| `media_providers.py` | OpenAI Images API, Google Imagen / Gemini image models, Lyria 3 (Interactions API) with Lyria RealTime as fallback; `MEDIA_MOCK=1` for placeholders |
+| `build_assets.py` | Builds the cover art, portraits, 64 px textures and `music.wav` from `script.json` → `assets` (cached), written to `build/assets.json` |
 | `build_audio.py` | TTS for each line (via `tts_providers`), timing, per-frame state (scene / lights / walking), mouth envelopes, synthesized hum, drone, footsteps and SFX |
 | `renderer.js` | Deterministic `BR.render(frame)`: a 270x295 textured raycaster upscaled 4x, plus VHS FX, minimap, mission boxes, karaoke subtitles and talking pixel portraits |
 | `capture.js` | Headless Chromium renders the frames with 4 parallel workers, ffmpeg encodes them, then muxes the audio |

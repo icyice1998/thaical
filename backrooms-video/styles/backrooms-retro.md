@@ -55,6 +55,21 @@ Each cue attaches to a line by index: `{ "line": 3, "type": "...", "at": "start|
 4. A new mission, then `glitch` → `scene ward` + `flashlight 0` + `entity 0` + `mission ""` → `walk 0.8`.
 5. Explore the ward, then a `mission` to follow the red line → `walk 0` at the door → `whiteout` → `scene doors` → `endcard` on the last line.
 
+## AI media (optional): set_assets → generate_assets
+
+Use these when the user wants richer art or a real music score. Each one needs a key in the server's environment, and anything missing falls back to code art. Run `generate_assets` before `generate_voice`, so the music gets mixed in.
+
+| option | values | needs |
+|---|---|---|
+| `image_provider` | `openai` (gpt-image) · `google` (Imagen) | `OPENAI_API_KEY` / `GEMINI_API_KEY` |
+| `cover_prompt` | Scene for the 9:16 cover art. The title is drawn on top. Without it, the cover is cropped from the opening 3D frame | image key |
+| `portraits` | `code` (lip-synced pixel art) · `ai-pixel` · `ai-photo`. AI portraits pulse with the voice and show a level meter instead of moving lips. Each character needs a `portrait_prompt` | image key |
+| `textures` | `code` · `ai` (wall, floor and ceiling tiles for level0 and ward, downscaled to 64 px for the retro look) | image key |
+| `music_prompt` | Lyria prompt, e.g. "slow dark ambient horror pad, detuned synth, distant piano, no drums". It is looped with crossfades and ducked under the voices | `GEMINI_API_KEY` |
+| `music_model` | `lyria-3-clip-preview` (default) · `lyria-3-pro-preview` · `realtime` | |
+
+`render` also writes `cover-9x16.jpg` next to the mp4.
+
 ## Tips
 - Run `preview_frame` at the title, the dark or entity beat, the ward, and the doors before rendering.
 - Each scene's walk distance is the walk speed times its duration. Walking speeds above 1.2 look like running.

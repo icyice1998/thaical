@@ -11,6 +11,8 @@ const pi = args.indexOf('--project');
 const HERE = __dirname, BUILD = path.join(pi >= 0 ? path.resolve(args[pi + 1]) : HERE, 'build');
 const tl = JSON.parse(fs.readFileSync(path.join(BUILD, 'timeline.json'), 'utf8'));
 const fps = tl.meta.fps;
+const assetsFile = path.join(BUILD, 'assets.json');
+if (fs.existsSync(assetsFile)) tl.assets = JSON.parse(fs.readFileSync(assetsFile, 'utf8'));
 
 async function openPage(browser) {
   const page = await browser.newPage({ viewport: { width: 1080, height: 1920 } });
@@ -66,8 +68,18 @@ async function full() {
   console.log(`done in ${((Date.now() - t0) / 1000).toFixed(0)}s -> ${outFile}`);
 }
 
+async function cover() {
+  const browser = await chromium.launch();
+  const page = await openPage(browser);
+  const b64 = await page.evaluate(() => { BR.renderCover(); return document.getElementById('out').toDataURL('image/jpeg', 0.92).split(',')[1]; });
+  fs.writeFileSync(path.join(BUILD, 'cover.jpg'), Buffer.from(b64, 'base64'));
+  await browser.close();
+  console.log('cover -> ' + path.join(BUILD, 'cover.jpg'));
+}
+
 (async () => {
   const i = args.indexOf('--stills');
-  if (i >= 0) await stills(args[i + 1].split(',').map(Number));
-  else await full();
+  if (args.includes('--cover')) await cover();
+  else if (i >= 0) await stills(args[i + 1].split(',').map(Number));
+  else { await full(); await cover(); }
 })().catch(e => { console.error(e); process.exit(1); });

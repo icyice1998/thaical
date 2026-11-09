@@ -273,6 +273,7 @@ const BR = (() => {
     low = document.createElement('canvas'); low.width = W; low.height = H; lctx = low.getContext('2d');
     img = lctx.createImageData(W, H); buf = new Uint32Array(img.data.buffer); zbuf = new Float32Array(W);
     buildTextures(); buildSprites(); buildOverlays();
+    await loadAssets(tl.assets);
 
     const st = tl.state;
     const range = name => { const idx = st.scene.map((s, i) => s === name ? i : -1).filter(i => i >= 0); return idx; };
@@ -322,6 +323,21 @@ const BR = (() => {
     }
     await document.fonts.ready;
     await Promise.all(['700 80px Kanit', '800 80px Kanit', '600 40px "IBM Plex Sans Thai"', '600 30px "IBM Plex Mono"'].map(f => document.fonts.load(f, 'กขA0')));
+  }
+
+  // AI assets from build_assets.py (data URLs, so canvases stay untainted)
+  const assetPortraits = {}; let coverArt = null;
+  const loadImg = src => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src; });
+  async function loadAssets(a) {
+    if (!a) return;
+    for (const [name, src] of Object.entries(a.textures || {})) {
+      if (!tex[name]) continue;
+      const im = await loadImg(src), c = document.createElement('canvas'); c.width = c.height = T;
+      const g = c.getContext('2d'); g.drawImage(im, 0, 0, T, T);
+      tex[name] = new Uint32Array(g.getImageData(0, 0, T, T).data.buffer.slice(0));
+    }
+    for (const [who, p] of Object.entries(a.portraits || {})) assetPortraits[who] = { mode: p.mode, img: await loadImg(p.src) };
+    if (a.cover_art) coverArt = await loadImg(a.cover_art);
   }
 
   function castDist(G, px, py, dx, dy) {
@@ -704,7 +720,18 @@ const BR = (() => {
       g.imageSmoothingEnabled = false;
       g.globalAlpha = talk ? 1 : 0.62;
       const look = TL.voices[w].look || (i === 0 ? 'operator' : 'doctor');
-      g.drawImage(portrait(look, mf > 0.33 ? 1 : 0, blink ? 1 : 0), x, y, pw, ph);
+      const ap = assetPortraits[w];
+      if (ap) { // AI portrait: no lip-sync, so pulse with the voice and show a level meter
+        const k = 1 + 0.02 * mf;
+        g.save(); g.beginPath(); g.rect(x, y, pw, ph); g.clip();
+        g.imageSmoothingEnabled = ap.mode !== 'ai-pixel';
+        g.drawImage(ap.img, x - pw * (k - 1) / 2, y - ph * (k - 1), pw * k, ph * k);
+        g.restore(); g.imageSmoothingEnabled = false;
+        if (talk) for (let b = 0; b < 7; b++) {
+          const lv = L.mouth[Math.max(0, Math.floor((t - L.start) * fps) - b)] || 0;
+          g.fillStyle = TL.voices[w].color; g.fillRect(x + 14 + b * 14, y + ph - 14 - lv * 46, 9, lv * 46 + 3);
+        }
+      } else g.drawImage(portrait(look, mf > 0.33 ? 1 : 0, blink ? 1 : 0), x, y, pw, ph);
       g.globalAlpha = 1;
       g.strokeStyle = talk ? TL.voices[w].color : '#77777f'; g.lineWidth = talk ? 8 : 5; g.strokeRect(x, y, pw, ph);
       outlined(g, TL.voices[w].name, x + pw / 2, y + ph + 54, '700 38px Kanit', talk ? TL.voices[w].color : '#bbb', '#111', 6);
@@ -723,5 +750,26 @@ const BR = (() => {
     drawSubtitle(f, t);
     drawPortraits(f, t);
   }
-  return { init, render };
+  // 9:16 cover: AI art if present, else a full-height crop of the opening 3D frame; title on top
+  function renderCover() {
+    const g = octx;
+    if (coverArt) g.drawImage(coverArt, 0, 0, OUT_W, OUT_H);
+    else {
+      const f = Math.min(TL.frames - 1, Math.round(2 * fps));
+      if (camTrack[f].scene === 'doors') renderDoors(f, 2); else renderView(f, 2);
+      const sw = H * OUT_W / OUT_H; g.imageSmoothingEnabled = false;
+      g.drawImage(low, (W - sw) / 2, 0, sw, H, 0, 0, OUT_W, OUT_H);
+    }
+    const gr = g.createLinearGradient(0, 0, 0, OUT_H);
+    gr.addColorStop(0, 'rgba(0,0,0,.55)'); gr.addColorStop(0.45, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,.5)');
+    g.fillStyle = gr; g.fillRect(0, 0, OUT_W, OUT_H);
+    const words = TL.meta.title.split(' ');
+    const big = words.length > 1 ? words.pop() : TL.meta.title, small = words.join(' ');
+    if (small) outlined(g, small, 540, 330, '800 130px Kanit', '#fff', '#1a1a1a', 18);
+    outlined(g, /^[\x00-\x7f]+$/.test(big) ? big.toUpperCase() : big, 540, 500, `800 ${big.length > 9 ? 150 : 180}px Kanit`, '#e52222', '#fff', 16);
+    if (TL.meta.subtitle) outlined(g, TL.meta.subtitle, 540, 610, '700 64px Kanit', '#ffd23f', '#1a1a1a', 12);
+    g.fillStyle = '#ff3030'; g.beginPath(); g.arc(70, 1820, 16, 0, 7); g.fill();
+    outlined(g, 'REC', 100, 1834, '600 44px "IBM Plex Mono"', '#fff', 'rgba(0,0,0,.6)', 6, 'left');
+  }
+  return { init, render, renderCover };
 })();

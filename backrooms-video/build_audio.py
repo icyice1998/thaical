@@ -25,6 +25,12 @@ def decode(path):
     return a
 
 
+def decode_raw(path):
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-f", "f32le", "-ac", "1", "-ar", str(SR), "-"],
+                         check=True, capture_output=True).stdout
+    return np.frombuffer(raw, np.float32).copy()
+
+
 def main():
     s = json.load(open(os.path.join(PROJECT, "script.json"), encoding="utf-8"))
     meta, voices, lines = s["meta"], s["voices"], s["lines"]
@@ -176,7 +182,27 @@ def main():
     # duck ambience under voice
     venv = np.convolve(np.abs(voice), np.ones(4800) / 4800, "same")
     duck = 1 - 0.45 * np.clip(venv / 0.05, 0, 1)
-    mix = voice * 1.0 + (hum + drone + noise_bed) * duck + sfx
+    # optional AI score (Lyria) from build_assets.py: looped with crossfades, ducked harder than ambience
+    score = np.zeros(n, np.float32)
+    ap = os.path.join(BUILD, "assets.json")
+    am = (json.load(open(ap)).get("music") if os.path.exists(ap) else None)
+    if am and os.path.exists(am["path"]):
+        m = decode_raw(am["path"])
+        xf = int(2.0 * SR)
+        if len(m) > 2 * xf:
+            ramp = np.linspace(0, 1, xf, dtype=np.float32)
+            pos = 0
+            while pos < n:
+                seg = m.copy()
+                if pos: seg[:xf] *= ramp
+                seg[-xf:] *= ramp[::-1]
+                k = min(len(seg), n - pos); score[pos:pos + k] += seg[:k]
+                pos += len(m) - xf
+            score *= am.get("volume", 0.5) / (np.max(np.abs(score)) or 1) * 0.5
+            drone *= 0.35
+            print(f"  music: {len(m) / SR:.1f}s loop, volume {am.get('volume', 0.5)}")
+    duck_m = 1 - 0.6 * np.clip(venv / 0.05, 0, 1)
+    mix = voice * 1.0 + (hum + drone + noise_bed) * duck + score * duck_m + sfx
     fade = np.minimum(1, np.minimum(tt / 0.5, (total - tt) / 1.5))
     mix = mix * fade
     mix /= max(1.0, np.max(np.abs(mix)) / 0.95)
