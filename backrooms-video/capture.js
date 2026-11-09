@@ -1,14 +1,16 @@
 // Step 2: render frames in headless Chromium and encode with ffmpeg.
 //   node capture.js                 -> build/out.mp4 (full video, parallel workers)
 //   node capture.js --stills 5,30,62 -> build/still-<sec>.png for quick checks
+//   add --project DIR to use DIR/build instead of this folder's build/
 const { chromium } = require('playwright');
 const { spawn } = require('child_process');
 const fs = require('fs'), path = require('path'), os = require('os');
 
-const HERE = __dirname, BUILD = path.join(HERE, 'build');
+const args = process.argv.slice(2);
+const pi = args.indexOf('--project');
+const HERE = __dirname, BUILD = path.join(pi >= 0 ? path.resolve(args[pi + 1]) : HERE, 'build');
 const tl = JSON.parse(fs.readFileSync(path.join(BUILD, 'timeline.json'), 'utf8'));
 const fps = tl.meta.fps;
-const args = process.argv.slice(2);
 
 async function openPage(browser) {
   const page = await browser.newPage({ viewport: { width: 1080, height: 1920 } });
@@ -40,7 +42,7 @@ async function renderChunk(browser, idx, f0, f1) {
   for (let f = f0; f < f1; f++) {
     const ok = ff.stdin.write(Buffer.from(await grab(page, f), 'base64'));
     if (!ok) await new Promise(r => ff.stdin.once('drain', r));
-    if ((f - f0) % 150 === 0) console.log(`  worker ${idx}: ${f - f0}/${f1 - f0}`);
+    if ((f - f0) % 60 === 0) console.log(`progress worker=${idx} ${f - f0}/${f1 - f0}`);
   }
   ff.stdin.end();
   await new Promise(r => ff.on('close', r));

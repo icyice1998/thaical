@@ -11,23 +11,42 @@
  "voices": {
   "ton": {
    "name": "ต้น",
-   "voice": "th-TH-NiwatNeural",
-   "rate": "+12%",
-   "pitch": "+0Hz",
+   "voice": "a50a04b8-35ee-487e-8b87-97f0eee68a64",
    "color": "#7fb8ff",
    "fallback": [
-    "en-US-AndrewMultilingualNeural"
-   ]
+    {
+     "provider": "edge",
+     "voice": "th-TH-NiwatNeural",
+     "rate": "+12%"
+    }
+   ],
+   "provider": "cartesia",
+   "voice_name": "Krit - Efficient Envoy",
+   "model": "sonic-3",
+   "speed": 1.05,
+   "look": "operator"
   },
   "mind": {
    "name": "มายด์",
-   "voice": "th-TH-PremwadeeNeural",
-   "rate": "+12%",
-   "pitch": "+0Hz",
+   "voice": "ccc7bb22-dcd0-42e4-822e-0731b950972f",
    "color": "#ffd166",
    "fallback": [
-    "en-US-EmmaMultilingualNeural"
-   ]
+    {
+     "provider": "edge",
+     "voice": "th-TH-PremwadeeNeural",
+     "rate": "+12%"
+    },
+    {
+     "provider": "edge",
+     "voice": "en-US-EmmaMultilingualNeural",
+     "rate": "+12%"
+    }
+   ],
+   "provider": "cartesia",
+   "voice_name": "Suda - Fortune Teller",
+   "model": "sonic-3",
+   "speed": 1.05,
+   "look": "doctor"
   }
  },
  "lines": [
@@ -116,7 +135,8 @@
      "at": "start",
      "offset": -0.6
     }
-   ]
+   ],
+   "emotion": "scared"
   },
   {
    "who": "ton",
@@ -146,7 +166,8 @@
      "at": "end",
      "offset": -0.8
     }
-   ]
+   ],
+   "emotion": "scared"
   },
   {
    "who": "ton",
@@ -164,7 +185,8 @@
      "at": "end",
      "offset": -1.0
     }
-   ]
+   ],
+   "emotion": "angry"
   },
   {
    "who": "mind",
@@ -206,12 +228,14 @@
      "at": "end",
      "offset": 0.9
     }
-   ]
+   ],
+   "emotion": "scared"
   },
   {
    "who": "mind",
    "text": "ที่นี่... เป็นทางเดินโรงพยาบาล ผนังกระเบื้องเขียว มีแต่เตียงว่างเต็มไปหมด",
-   "gap_before": 1.0
+   "gap_before": 1.0,
+   "emotion": "curious"
   },
   {
    "who": "ton",
@@ -226,7 +250,8 @@
      "value": "หาทางออก · LEVEL ???",
      "at": "start"
     }
-   ]
+   ],
+   "emotion": "curious"
   },
   {
    "who": "ton",
@@ -250,7 +275,8 @@
      "at": "end",
      "offset": -1.0
     }
-   ]
+   ],
+   "emotion": "excited"
   },
   {
    "who": "ton",
@@ -279,7 +305,8 @@
   {
    "who": "mind",
    "text": "ข้างในมีประตูอีกสามบาน เขียนว่า กลับบ้าน ลึกลงไป แล้วก็ ห้ามเปิด",
-   "gap_before": 1.2
+   "gap_before": 1.2,
+   "emotion": "curious"
   },
   {
    "who": "ton",

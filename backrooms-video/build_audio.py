@@ -1,44 +1,24 @@
 """Step 1: TTS every line, build timeline.json, mix audio.wav.
 
-Usage: python3 build_audio.py  (reads script.json, writes build/)
+Usage: python3 build_audio.py [PROJECT_DIR]
+  PROJECT_DIR holds script.json; output goes to PROJECT_DIR/build/ (default: this folder).
 """
-import asyncio, hashlib, json, os, subprocess, sys, time
+import json, os, subprocess, sys
 import numpy as np
-
-# edge-tts pins certifi; point it at the system/proxy CA bundle when one is set
-CA = os.environ.get("SSL_CERT_FILE") or ("/root/.ccr/ca-bundle.crt" if os.path.exists("/root/.ccr/ca-bundle.crt") else None)
-if CA:
-    import certifi
-    certifi.where = lambda: CA
-import edge_tts
+import tts_providers as tp
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-BUILD = os.path.join(HERE, "build")
+PROJECT = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else HERE
+BUILD = os.path.join(PROJECT, "build")
 SR = 48000
 os.makedirs(os.path.join(BUILD, "tts"), exist_ok=True)
-
-
-def tts(text, v, voice=None):
-    voice = voice or v["voice"]
-    key = hashlib.sha1(f"{voice}|{v['rate']}|{v['pitch']}|{text}".encode()).hexdigest()[:16]
-    path = os.path.join(BUILD, "tts", key + ".mp3")
-    if not os.path.exists(path) or os.path.getsize(path) == 0:
-        async def go():
-            await edge_tts.Communicate(text, voice, rate=v["rate"], pitch=v["pitch"]).save(path)
-        for attempt in range(4):
-            try:
-                asyncio.run(go()); break
-            except edge_tts.exceptions.NoAudioReceived:
-                if attempt == 3: raise
-                time.sleep(2 * (attempt + 1))
-    return path
 
 
 def decode(path):
     raw = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-f", "f32le", "-ac", "1", "-ar", str(SR), "-"],
                          check=True, capture_output=True).stdout
     a = np.frombuffer(raw, np.float32).copy()
-    # trim edge-tts leading/trailing silence
+    # trim leading/trailing silence
     idx = np.where(np.abs(a) > 0.01)[0]
     if len(idx):
         a = a[max(0, idx[0] - int(0.03 * SR)): idx[-1] + int(0.08 * SR)]
@@ -46,29 +26,31 @@ def decode(path):
 
 
 def main():
-    s = json.load(open(os.path.join(HERE, "script.json"), encoding="utf-8"))
+    s = json.load(open(os.path.join(PROJECT, "script.json"), encoding="utf-8"))
     meta, voices, lines = s["meta"], s["voices"], s["lines"]
     fps = meta["fps"]
+    tts_dir = os.path.join(BUILD, "tts")
 
     # 0) pick one working voice per character (primary, else fallback) so a character never switches voice mid-episode
+    files = {}
     for key, v in voices.items():
-        mine = [ln["text"] for ln in lines if ln["who"] == key]
-        for cand in [v["voice"]] + v.get("fallback", []):
+        mine = [(i, ln) for i, ln in enumerate(lines) if ln["who"] == key]
+        for cand in tp.candidates(v):
             try:
-                for text in mine: tts(text, v, cand)
-                v["voice"] = cand; break
-            except edge_tts.exceptions.NoAudioReceived:
-                print(f"  ! voice {cand} unavailable for {v['name']}, trying fallback")
+                got = {i: tp.synth(ln["text"], cand, tts_dir, emotion=ln.get("emotion")) for i, ln in mine}
+                files.update(got); voices[key] = {**cand, "fallback": v.get("fallback", [])}; break
+            except tp.VoiceUnavailable as e:
+                print(f"  ! {cand.get('provider', 'edge')}:{cand['voice']} unavailable for {v['name']} ({e}), trying fallback")
         else:
             raise SystemExit(f"no working voice for {v['name']}")
-        print(f"  voice {v['name']}: {v['voice']}")
+        print(f"  voice {v['name']}: {voices[key].get('provider', 'edge')}:{voices[key]['voice']}")
 
     # 1) voices + line timing
     t = meta["lead_in"]
     out_lines, clips = [], []
     for i, ln in enumerate(lines):
         v = voices[ln["who"]]
-        audio = decode(tts(ln["text"], v))
+        audio = decode(files[i])
         t += ln.get("gap_before", 0.35 if i else 0.0)
         start, dur = t, len(audio) / SR
         # mouth envelope at fps

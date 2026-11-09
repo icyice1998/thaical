@@ -645,10 +645,15 @@ const BR = (() => {
 
   // ---------- portraits ----------
   const portraitCache = {};
-  function portrait(who, mouth, blink) {
-    const key = who + mouth + blink; if (portraitCache[key]) return portraitCache[key];
+  // looks: 'operator' (male, headset) | 'doctor' (female, scrubs) | 'entity' (shadow with a smile)
+  function portrait(look, mouth, blink) {
+    const key = look + mouth + blink; if (portraitCache[key]) return portraitCache[key];
     const pc = canvasPix(40, 44, g => {
-      if (who === 'ton') {
+      if (look === 'entity') {
+        R(g, '#120808', 0, 0, 40, 44); R(g, '#030303', 10, 6, 20, 38); R(g, '#030303', 6, 30, 28, 14);
+        R(g, '#fffef0', 14, 16, 3, blink ? 1 : 3); R(g, '#fffef0', 23, 16, 3, blink ? 1 : 3);
+        R(g, '#fffef0', 12, 25, 16, mouth ? 4 : 2); for (let i = 13; i < 28; i += 2) R(g, '#030303', i, 25, 1, mouth ? 4 : 2);
+      } else if (look === 'operator') {
         R(g, '#3b1d1f', 0, 0, 40, 44);
         const skin = '#d9a07a', sh = '#b77f5c', hair = '#141016';
         R(g, '#22314f', 6, 34, 28, 10); R(g, '#2c3f66', 8, 35, 24, 9); R(g, '#d9a07a', 16, 33, 8, 3); // shirt+neck
@@ -689,15 +694,17 @@ const BR = (() => {
     g.fillStyle = '#3a3a40'; g.fillRect(0, y0, OUT_W, h);
     for (let x = 0; x < OUT_W; x += 12) { g.fillStyle = '#34343a'; g.fillRect(x, y0, 4, h); }
     g.fillStyle = '#56565e'; g.fillRect(0, y0, OUT_W, 4);
-    const who = ['ton', 'mind'];
+    const who = Object.keys(TL.voices).slice(0, 3), n = who.length, pw = n > 2 ? 260 : 300, gap = 30;
+    const left = (OUT_W - (n * pw + (n - 1) * gap)) / 2;
     who.forEach((w, i) => {
       const L = TL.lines.find(l => l.who === w && t >= l.start && t < l.end);
       const talk = !!L, mf = L ? L.mouth[Math.floor((t - L.start) * fps)] || 0 : 0;
       const blink = (Math.floor(t * fps) + i * 37) % 112 < 4;
-      const pw = 300, ph = 330, x = 225 + i * 330, bounce = talk ? Math.sin(t * 18) * 3 : 0, y = y0 + 40 - bounce;
+      const ph = Math.round(pw * 1.1), x = left + i * (pw + gap), bounce = talk ? Math.sin(t * 18) * 3 : 0, y = y0 + 40 - bounce;
       g.imageSmoothingEnabled = false;
       g.globalAlpha = talk ? 1 : 0.62;
-      g.drawImage(portrait(w, mf > 0.33 ? 1 : 0, blink ? 1 : 0), x, y, pw, ph);
+      const look = TL.voices[w].look || (i === 0 ? 'operator' : 'doctor');
+      g.drawImage(portrait(look, mf > 0.33 ? 1 : 0, blink ? 1 : 0), x, y, pw, ph);
       g.globalAlpha = 1;
       g.strokeStyle = talk ? TL.voices[w].color : '#77777f'; g.lineWidth = talk ? 8 : 5; g.strokeRect(x, y, pw, ph);
       outlined(g, TL.voices[w].name, x + pw / 2, y + ph + 54, '700 38px Kanit', talk ? TL.voices[w].color : '#bbb', '#111', 6);
