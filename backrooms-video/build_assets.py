@@ -4,15 +4,23 @@
     "image_provider": "openai" | "google",
     "cover":     {"prompt": "..."},                  # cover art (9:16); the title is drawn on top by the renderer
     "portraits": "code" | "ai-pixel" | "ai-photo",   # uses each character's "portrait_prompt"
+                                                     # or its own files: voices.<id>.images (see below)
     "textures":  "code" | "ai",                      # wall/floor/ceiling tiles for level0 and ward
     "music":     {"prompt": "...", "bpm": 70, "seconds": 40, "volume": 0.5, "model": "lyria-3-clip-preview"}
   }
+
+Your own character set (e.g. made in ChatGPT), per character in script.json → voices.<id>.images:
+    {"portrait": "chars/mind.png", "portrait_talk": "chars/mind_talk.png",      # closed / open mouth = lip-sync
+     "sprite_front": "chars/mind_front.png", "sprite_back": "chars/mind_back.png"}  # full body, explorer only
+Paths are relative to the project folder (or absolute, or http(s) URLs). Solid backgrounds are keyed out for sprites.
 
 Writes PROJECT/build/assets.json (data URLs for the renderer) and build/assets/music.wav.
 Anything that fails falls back to the code-drawn version and is listed in "warnings".
 Usage: python3 build_assets.py [PROJECT_DIR]
 """
 import base64, hashlib, io, json, os, subprocess, sys
+
+import numpy as np
 
 from PIL import Image
 
@@ -60,6 +68,53 @@ def _crop_to(im, w, h, top_bias=0.0):
     nh = int(sw / tr); y = int((sh - nh) * (0.5 - top_bias / 2)); return im.crop((0, y, sw, y + nh))
 
 
+def _load_user(ref):
+    if ref.startswith(("http://", "https://")):
+        import urllib.request
+        with urllib.request.urlopen(ref, timeout=60) as r:
+            return Image.open(io.BytesIO(r.read())).convert("RGBA")
+    for base in (PROJECT, HERE, os.getcwd()):
+        p = ref if os.path.isabs(ref) else os.path.join(base, ref)
+        if os.path.exists(p):
+            return Image.open(p).convert("RGBA")
+    raise FileNotFoundError(ref)
+
+
+def _key_out(im, tol=38):
+    """Make a flat background transparent (flood fill from the corners) unless the image already has alpha."""
+    a = np.array(im)
+    if (a[..., 3] < 250).mean() > 0.02:
+        return im
+    from collections import deque
+    h, w = a.shape[:2]; rgb = a[..., :3].astype(int)
+    seen = np.zeros((h, w), bool); q = deque()
+    for y, x in ((0, 0), (0, w - 1), (h - 1, 0), (h - 1, w - 1)):
+        q.append((y, x)); seen[y, x] = True
+    ref = np.median(np.array([rgb[0, 0], rgb[0, -1], rgb[-1, 0], rgb[-1, -1]]), 0)
+    while q:
+        y, x = q.popleft()
+        a[y, x, 3] = 0
+        for ny, nx in ((y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)):
+            if 0 <= ny < h and 0 <= nx < w and not seen[ny, nx] and np.abs(rgb[ny, nx] - ref).sum() < tol * 3:
+                seen[ny, nx] = True; q.append((ny, nx))
+    return Image.fromarray(a)
+
+
+def _portrait_from(im, mode):
+    im = _crop_to(im, 40, 44, top_bias=0.3)
+    if mode == "ai-pixel":
+        return im.resize((40, 44), Image.BOX).convert("RGB").quantize(32, method=Image.MEDIANCUT).convert("RGBA")
+    return im.resize((300, 330), Image.LANCZOS)
+
+
+def _sprite_from(im, height=64):
+    im = _key_out(im)
+    bbox = im.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
+    if bbox: im = im.crop(bbox)
+    w = max(4, round(im.width * height / im.height))
+    return im.resize((w, height), Image.BOX)
+
+
 def main():
     s = json.load(open(os.path.join(PROJECT, "script.json"), encoding="utf-8"))
     cfg = s.get("assets") or {}
@@ -77,10 +132,28 @@ def main():
         except mp.MediaUnavailable as e:
             out["warnings"].append(f"cover: {e}")
 
-    # portraits
+    # portraits + sprites from the user's own files (take priority over generated ones)
     mode = cfg.get("portraits", "code")
+    out["sprites"] = {}
+    for key, v in s["voices"].items():
+        imgs = v.get("images") or {}
+        try:
+            if imgs.get("portrait"):
+                pm = "ai-pixel" if mode == "ai-pixel" else "ai-photo"
+                out["portraits"][key] = {"mode": pm, "src": _data_url(_portrait_from(_load_user(imgs["portrait"]), pm)), "user": True}
+                if imgs.get("portrait_talk"):
+                    out["portraits"][key]["talk"] = _data_url(_portrait_from(_load_user(imgs["portrait_talk"]), pm))
+                print(f"  portrait {key}: user file" + (" + talk frame" if imgs.get("portrait_talk") else ""))
+            if imgs.get("sprite_front"):
+                front = _sprite_from(_load_user(imgs["sprite_front"]))
+                back = _sprite_from(_load_user(imgs["sprite_back"])) if imgs.get("sprite_back") else front
+                out["sprites"]["explorer"] = {"front": _data_url(front), "back": _data_url(back), "who": key}
+                print(f"  explorer sprite: {key}")
+        except (FileNotFoundError, OSError) as e:
+            out["warnings"].append(f"images {key}: {e}")
     if mode in ("ai-pixel", "ai-photo"):
         for key, v in s["voices"].items():
+            if key in out["portraits"]: continue
             p = v.get("portrait_prompt")
             if not p:
                 out["warnings"].append(f"portrait {key}: no portrait_prompt, using code art"); continue
@@ -129,7 +202,7 @@ def main():
     json.dump(out, open(os.path.join(BUILD, "assets.json"), "w"))
     for w in out["warnings"]:
         print("  ! " + w)
-    print(f"assets: cover={'yes' if out['cover_art'] else 'no'} portraits={len(out['portraits'])} "
+    print(f"assets: cover={'yes' if out['cover_art'] else 'no'} portraits={len(out['portraits'])} sprites={len(out['sprites'])} "
           f"textures={len(out['textures'])} music={'yes' if out['music'] else 'no'} -> build/assets.json")
 
 

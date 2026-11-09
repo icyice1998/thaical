@@ -337,7 +337,15 @@ const BR = (() => {
       const g = c.getContext('2d'); g.drawImage(im, 0, 0, T, T);
       tex[name] = new Uint32Array(g.getImageData(0, 0, T, T).data.buffer.slice(0));
     }
-    for (const [who, p] of Object.entries(a.portraits || {})) assetPortraits[who] = { mode: p.mode, img: await loadImg(p.src) };
+    for (const [who, p] of Object.entries(a.portraits || {}))
+      assetPortraits[who] = { mode: p.mode, img: await loadImg(p.src), talk: p.talk ? await loadImg(p.talk) : null };
+    const ex = (a.sprites || {}).explorer;
+    if (ex) { // user's explorer sprite replaces the code-drawn one; walk = 1px bob on alternate frames
+      const fr = await loadImg(ex.front), bk = await loadImg(ex.back);
+      const mk = (im, bob) => canvasPix(im.width, im.height + 1, g => g.drawImage(im, 0, bob));
+      for (let p = 0; p < 4; p++) { sprites['mindFront' + p] = mk(fr, p % 2); sprites['mindBack' + p] = mk(bk, p % 2); }
+      sprites.mindFront = sprites.mindFront0; sprites.mindBack0 = sprites.mindBack0;
+    }
     if (a.cover_art) coverArt = await loadImg(a.cover_art);
   }
 
@@ -724,13 +732,13 @@ const BR = (() => {
       g.globalAlpha = talk ? 1 : 0.62;
       const look = TL.voices[w].look || (i === 0 ? 'operator' : 'doctor');
       const ap = assetPortraits[w];
-      if (ap) { // AI portrait: no lip-sync, so pulse with the voice and show a level meter
+      if (ap) { // image portrait: lip-sync if a talk frame exists, else pulse + level meter
         const k = 1 + 0.02 * mf;
         g.save(); g.beginPath(); g.rect(x, y, pw, ph); g.clip();
         g.imageSmoothingEnabled = ap.mode !== 'ai-pixel';
-        g.drawImage(ap.img, x - pw * (k - 1) / 2, y - ph * (k - 1), pw * k, ph * k);
+        g.drawImage(ap.talk && mf > 0.33 ? ap.talk : ap.img, x - pw * (k - 1) / 2, y - ph * (k - 1), pw * k, ph * k);
         g.restore(); g.imageSmoothingEnabled = false;
-        if (talk) for (let b = 0; b < 7; b++) {
+        if (talk && !ap.talk) for (let b = 0; b < 7; b++) {
           const lv = L.mouth[Math.max(0, Math.floor((t - L.start) * fps) - b)] || 0;
           g.fillStyle = TL.voices[w].color; g.fillRect(x + 14 + b * 14, y + ph - 14 - lv * 46, 9, lv * 46 + 3);
         }

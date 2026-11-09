@@ -141,6 +141,7 @@ def set_script(project_id: str, characters: dict, lines: list[dict]) -> dict:
              "model": c.get("model", "sonic-3"), "speed": float(c.get("speed", 1.05)), "look": look,
              "color": c.get("color", DEFAULT_COLORS[i % 3]), "fallback": c.get("fallback", [])}
         if c.get("portrait_prompt"): v["portrait_prompt"] = c["portrait_prompt"]
+        if c.get("images"): v["images"] = c["images"]
         if v["provider"] == "edge":
             v.update({"rate": c.get("rate", "+12%"), "pitch": c.get("pitch", "+0Hz")})
         voices[k] = v
@@ -219,6 +220,24 @@ def set_assets(project_id: str, image_provider: str = "openai", cover_prompt: st
         need.append("OPENAI_API_KEY" if image_provider == "openai" else "GEMINI_API_KEY")
     if music_prompt and not av["lyria_music"]: need.append("GEMINI_API_KEY")
     return {"ok": True, "assets": a, "missing_keys": sorted(set(need)), "next": "generate_assets, then generate_voice"}
+
+
+@mcp.tool()
+def set_character_images(project_id: str, character: str, portrait: str | None = None, portrait_talk: str | None = None,
+                         sprite_front: str | None = None, sprite_back: str | None = None) -> dict:
+    """Use your own character art (e.g. made in ChatGPT). Values are file paths (absolute, or relative to the project
+    or backrooms-video folder) or http(s) URLs.
+    portrait / portrait_talk: square head-and-shoulders, same framing, mouth closed / mouth open (gives lip-sync).
+    sprite_front / sprite_back: full body, plain or transparent background; makes this character the explorer in 3D.
+    Then run generate_assets."""
+    s = _load(project_id)
+    if character not in s["voices"]:
+        raise ValueError(f"unknown character; have {list(s['voices'])}")
+    imgs = {k: v for k, v in dict(portrait=portrait, portrait_talk=portrait_talk,
+                                  sprite_front=sprite_front, sprite_back=sprite_back).items() if v}
+    s["voices"][character].setdefault("images", {}).update(imgs)
+    _save(project_id, s)
+    return {"ok": True, "character": character, "images": s["voices"][character]["images"], "next": "generate_assets"}
 
 
 @mcp.tool()

@@ -70,6 +70,12 @@ Use these when the user wants richer art or a real music score. Each one needs a
 
 `render` also writes `cover-9x16.jpg` next to the mp4.
 
+### Your own character set (e.g. made in ChatGPT, so no API credits are used)
+Use `set_character_images(project_id, character, portrait, portrait_talk, sprite_front, sprite_back)`, then `generate_assets`.
+- `portrait` and `portrait_talk` are the same picture with the mouth closed and open, which gives real lip-sync.
+- `sprite_front` and `sprite_back` replace the explorer seen in 3D. Flat backgrounds are removed automatically.
+- See `characters/README.md` for the file sizes and framing.
+
 ## Tips
 - Run `preview_frame` at the title, the dark or entity beat, the ward, and the doors before rendering.
 - Each scene's walk distance is the walk speed times its duration. Walking speeds above 1.2 look like running.
