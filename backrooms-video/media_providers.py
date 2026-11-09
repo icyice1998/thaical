@@ -10,7 +10,8 @@ import asyncio, base64, io, json, os, ssl, urllib.error, urllib.request, wave
 import numpy as np
 
 CA = os.environ.get("SSL_CERT_FILE") or ("/root/.ccr/ca-bundle.crt" if os.path.exists("/root/.ccr/ca-bundle.crt") else None)
-OPENAI_IMAGE_MODEL = os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1")
+OPENAI_IMAGE_MODEL = os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-2")
+OPENAI_IMAGE_FALLBACKS = ["gpt-image-2", "gpt-image-1.5", "gpt-image-1", "gpt-image-1-mini"]
 GOOGLE_IMAGE_MODEL = os.environ.get("GOOGLE_IMAGE_MODEL", "imagen-4.0-generate-001")
 LYRIA_MODEL = os.environ.get("LYRIA_MODEL", "lyria-3-clip-preview")
 LYRIA_REALTIME_MODEL = "models/lyria-realtime-exp"
@@ -40,16 +41,26 @@ def openai_image(prompt, aspect="1:1", transparent=False, quality="medium"):
     key = os.environ.get("OPENAI_API_KEY")
     if not key:
         raise MediaUnavailable("OPENAI_API_KEY not set")
-    body = {"model": OPENAI_IMAGE_MODEL, "prompt": prompt, "size": OPENAI_SIZES[aspect], "quality": quality, "n": 1}
-    if transparent:
-        body.update(background="transparent", output_format="png")
-    req = urllib.request.Request("https://api.openai.com/v1/images/generations", data=json.dumps(body).encode(),
-                                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=300, context=ssl.create_default_context(cafile=CA) if CA else None) as r:
-            d = json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        raise MediaUnavailable(f"openai images {e.code}: {e.read().decode(errors='replace')[:300]}") from e
+    models = [OPENAI_IMAGE_MODEL] + [m for m in OPENAI_IMAGE_FALLBACKS if m != OPENAI_IMAGE_MODEL]
+    for model in models:
+        body = {"model": model, "prompt": prompt, "size": OPENAI_SIZES[aspect], "quality": quality, "n": 1}
+        if transparent:
+            body.update(background="transparent", output_format="png")
+        req = urllib.request.Request("https://api.openai.com/v1/images/generations", data=json.dumps(body).encode(),
+                                     headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=300, context=ssl.create_default_context(cafile=CA) if CA else None) as r:
+                d = json.loads(r.read())
+            break
+        except urllib.error.HTTPError as e:
+            raw = e.read().decode(errors="replace")
+            try: err = json.loads(raw).get("error", {})
+            except ValueError: err = {}
+            if e.code == 429 and err.get("type") == "insufficient_quota":
+                raise MediaUnavailable("openai: no credits left; add credits at platform.openai.com → Settings → Billing") from e
+            if e.code in (400, 403, 404) and "model" in (err.get("message", "") + str(err.get("code", ""))).lower() and model != models[-1]:
+                continue  # model not available for this account: try the next one
+            raise MediaUnavailable(f"openai images {e.code}: {raw[:300]}") from e
     item = d["data"][0]
     if "b64_json" in item:
         return base64.b64decode(item["b64_json"])
