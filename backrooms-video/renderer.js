@@ -290,7 +290,8 @@ const BR = (() => {
     if (toast) {
       const s0 = st.prog[Math.round(toast.t * fps)] + 1.5 + 1.2;
       const [x, y] = pathAt(scenes.level0.P, s0);
-      scenes.level0.pickup = { k: 'flashlight', x, y, h: 0.1, w: 0.3, until: toast.t };
+      const k = /ไฟฉาย|flashlight/i.test(toast.value) ? 'flashlight' : 'bottle';
+      scenes.level0.pickup = k === 'flashlight' ? { k, x, y, h: 0.1, w: 0.3, until: toast.t } : { k, x, y, h: 0.16, w: 0.11, until: toast.t };
     }
 
     // camera track
@@ -570,7 +571,9 @@ const BR = (() => {
       g.globalAlpha = 1;
     }
     // doors labels
-    if (c.scene === 'doors') {
+    const titleCue = TL.cues.find(c => c.type === 'title');
+    const titleOn = titleCue && t < titleCue.t + titleCue.dur;
+    if (c.scene === 'doors' && !titleOn) {
       const labels = [['กลับบ้าน', '#bff5cf'], ['ลึกลงไป', '#e6e6e6'], ['ห้ามเปิด', '#ff6a6a']];
       labels.forEach(([txt, col], i) => outlined(g, txt, (22 + 31 + i * 82) * SCALE, 70 * SCALE + 6, '700 44px Kanit', col, '#111', 8));
     }
