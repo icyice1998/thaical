@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Backrooms Renderer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@500;700;800&family=IBM+Plex+Sans+Thai:wght@500;600&family=IBM+Plex+Mono:wght@600&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; background: #000; }
+  canvas { display: block; width: 540px; height: 960px; image-rendering: pixelated; }
+  #ctl { position: fixed; left: 560px; top: 10px; color: #ccc; font: 14px monospace; }
+</style>
+</head>
+<body>
+<canvas id="out" width="1080" height="1920"></canvas>
+<div id="ctl"><input id="scrub" type="range" min="0" value="0" style="width:400px"><span id="tc"></span></div>
+<script src="renderer.js"></script>
+<script>
+  // Preview mode: open with ?preview and a build/timeline.json next to it (needs a local http server)
+  if (location.search.includes('preview')) {
+    fetch('build/timeline.json').then(r => r.json()).then(async tl => {
+      await BR.init(tl);
+      const s = document.getElementById('scrub');
+      s.max = tl.frames - 1;
+      const draw = () => { BR.render(+s.value); document.getElementById('tc').textContent = (s.value / tl.meta.fps).toFixed(2) + 's'; };
+      s.oninput = draw; draw();
+    });
+  }
+</script>
+</body>
+</html>
