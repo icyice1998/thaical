@@ -323,11 +323,14 @@ const BR = (() => {
   async function init(tl) {
     TL = tl; fps = tl.meta.fps;
     out = document.getElementById('out'); g = out.getContext('2d');
-    gl = document.createElement('canvas'); gl.width = W; gl.height = H;
+    const GS = tl.meta.gl_scale || 0.667; // 3D layer resolution (overlays stay full-res)
+    gl = document.createElement('canvas'); gl.width = Math.round(W * GS); gl.height = Math.round(H * GS);
     THREE.ColorManagement.legacyMode = false; // hex colours are sRGB -> correct, non-washed-out shading
-    renderer = new THREE.WebGLRenderer({ canvas: gl, antialias: true, preserveDrawingBuffer: true });
-    renderer.setPixelRatio(1); renderer.setSize(W, H, false);
-    renderer.outputEncoding = THREE.sRGBEncoding; renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // software WebGL in headless Chromium: MSAA and per-frame shadow passes dominate the cost, so
+    // antialias is off (frames are downscaled by the video encoder anyway) and shadows are baked once
+    renderer = new THREE.WebGLRenderer({ canvas: gl, antialias: !!tl.meta.msaa, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(1); renderer.setSize(gl.width, gl.height, false);
+    renderer.outputEncoding = THREE.sRGBEncoding; renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
     camera = new THREE.PerspectiveCamera(42, W / H, .05, 60);
     buildRoom(); buildProps();
@@ -336,6 +339,8 @@ const BR = (() => {
     buildDoctor(a.body_front ? await loadImg(a.body_front) : ph, a.body_back ? await loadImg(a.body_back) : ph);
     if (a.face_closed) faceClosed = await loadImg(a.face_closed);
     faceOpen = a.face_open ? await loadImg(a.face_open) : faceClosed;
+    renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true;
+    camera.position.set(0, 2, 5); camera.lookAt(0, 1, -1); renderer.render(scene, camera); // bake static shadows
     steps = tl.cues.filter(c => c.type === 'step').sort((x, y) => x.t - y.t);
     buildStationTimeline();
     await document.fonts.ready;
@@ -347,7 +352,7 @@ const BR = (() => {
     const cam = cameraAt(t); camera.position.copy(cam.pos); camera.lookAt(cam.look);
     animateProps(t); placeDoctor(t);
     renderer.render(scene, camera);
-    g.drawImage(gl, 0, 0);
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; g.drawImage(gl, 0, 0, W, H);
     // soft vignette + top progress bar
     const vg = g.createRadialGradient(W / 2, H / 2, H * .35, W / 2, H / 2, H * .75); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.35)');
     g.fillStyle = vg; g.fillRect(0, 0, W, H);
@@ -360,5 +365,12 @@ const BR = (() => {
   function renderCover() {
     render(Math.round(1.6 * fps));
   }
-  return { init, render, renderCover };
+  function profile(f) {
+    const t = f / fps, T = {}; let t0 = performance.now();
+    const cam = cameraAt(t); camera.position.copy(cam.pos); camera.lookAt(cam.look); animateProps(t); placeDoctor(t);
+    renderer.render(scene, camera); renderer.getContext().finish(); T.gl = performance.now() - t0; t0 = performance.now();
+    g.drawImage(gl, 0, 0); g.getImageData(0, 0, 1, 1); T.copy = performance.now() - t0; t0 = performance.now();
+    render(f); T.full = performance.now() - t0; return T;
+  }
+  return { init, render, renderCover, profile };
 })();
