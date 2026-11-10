@@ -50,11 +50,18 @@ STYLES["character-explainer"] = {
     "aspect": "9:16", "typical_length_s": [40, 60],
     "guide": os.path.join(HERE, "styles", "character-explainer.md"),
 }
+STYLES["history-doc"] = {
+    "name": "History documentary (archival paintings + presenter)",
+    "description": "Full-bleed public-domain paintings with Ken Burns moves and crossfades, date/place chips, big-number "
+                   "boxes with strike-through, archival image cards, typed quotes, timelines, cut-out presenter, captions, credits.",
+    "aspect": "9:16", "typical_length_s": [50, 100],
+    "guide": os.path.join(HERE, "styles", "history-doc.md"),
+}
 STATIONS = {"overview", "desk", "sink", "bed", "bedClose", "sharps", "center"}
 CARD_KINDS = {"title", "counter", "bars", "threshold", "checklist", "code", "numbers", "note"}
 SCENES = {"level0", "ward", "doors"}
 CUE_TYPES = {"scene", "walk", "lights", "flashlight", "entity", "shake", "glitch", "whiteout",
-             "mission", "toast", "title", "endcard", "card", "pose", "step"}
+             "mission", "toast", "title", "endcard", "card", "pose", "step", "shot"}
 LOOKS = {"operator", "doctor", "entity"}
 DEFAULT_COLORS = ["#7fb8ff", "#ffd166", "#ff6b6b"]
 JOBS = {}
@@ -197,6 +204,8 @@ def set_scenes(project_id: str, cues: list[dict], replace: bool = True) -> dict:
             raise ValueError(f"cue {c}: type must be one of {sorted(CUE_TYPES)}")
         if t == "card" and (not isinstance(c.get("value"), dict) or c["value"].get("kind") not in CARD_KINDS):
             raise ValueError(f"cue {c}: card value must be an object with kind in {sorted(CARD_KINDS)}")
+        if t == "shot" and (not isinstance(c.get("value"), dict) or not c["value"].get("img")):
+            raise ValueError(f"cue {c}: shot value needs img (a key from set_images)")
         if t == "step" and (not isinstance(c.get("value"), dict) or "n" not in c["value"] or "title" not in c["value"]
                             or c["value"].get("station", "center") not in STATIONS):
             raise ValueError(f"cue {c}: step value needs n, title and station in {sorted(STATIONS)}")
@@ -280,6 +289,17 @@ def set_cast_sheet(project_id: str, path: str, rows: list[str] | None = None, ex
     a["portraits"] = portraits
     _save(project_id, s)
     return {"ok": True, "cast_sheet": a["cast_sheet"], "next": "generate_assets"}
+
+
+@mcp.tool()
+def set_images(project_id: str, images: dict) -> dict:
+    """Archival/stock images for shots: {key: "File:<Wikimedia Commons title>" | path | URL | {"file": ..., "credit": "short credit"}}.
+    Commons files are downloaded with artist/licence metadata and credited on screen. Prefer public domain / CC0 / Licence Ouverte.
+    Then reference keys in `shot` cues and run generate_assets."""
+    s = _load(project_id)
+    s.setdefault("assets", {})["images"] = images
+    _save(project_id, s)
+    return {"ok": True, "images": list(images), "next": "generate_assets"}
 
 
 @mcp.tool()

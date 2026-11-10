@@ -19,7 +19,7 @@ Writes PROJECT/build/assets.json (data URLs for the renderer) and build/assets/m
 Anything that fails falls back to the code-drawn version and is listed in "warnings".
 Usage: python3 build_assets.py [PROJECT_DIR]
 """
-import base64, hashlib, io, json, os, subprocess, sys
+import base64, hashlib, io, json, os, subprocess, sys, time
 
 import numpy as np
 
@@ -116,6 +116,37 @@ def _sprite_from(im, height=160):
     if bbox: im = im.crop(bbox)
     w = max(4, round(im.width * height / im.height))
     return im.resize((w, height), Image.BOX)
+
+
+def _fetch_commons(title):
+    """Download a Wikimedia Commons file (1600 px thumb) + artist/licence metadata, cached, with 429 backoff."""
+    import re, ssl, time, urllib.error, urllib.parse, urllib.request
+    h = hashlib.sha1(title.encode()).hexdigest()[:16]
+    img_p, meta_p = os.path.join(CACHE, f"commons-{h}.jpg"), os.path.join(CACHE, f"commons-{h}.json")
+    if os.path.exists(img_p) and os.path.exists(meta_p):
+        return Image.open(img_p), json.load(open(meta_p))
+    ctx = ssl.create_default_context(cafile=mp.CA) if mp.CA else None
+    ua = {"User-Agent": "video-pipeline/1.0 (educational short videos)"}
+    def get(url):
+        for k in range(6):
+            try:
+                return urllib.request.urlopen(urllib.request.Request(url, headers=ua), context=ctx, timeout=60).read()
+            except urllib.error.HTTPError as e:
+                if e.code != 429 or k == 5: raise
+                time.sleep(10 * (k + 1))
+    api = lambda **kw: next(iter(json.loads(get("https://commons.wikimedia.org/w/api.php?" + urllib.parse.urlencode(
+        {"action": "query", "titles": title, "prop": "imageinfo", "format": "json", **kw})))["query"]["pages"].values()))["imageinfo"][0]
+    ow = api(iiprop="size")["width"]
+    # Wikimedia only serves standard thumbnail widths without throttling: pick the largest one below the original
+    width = next((w for w in (1920, 1280, 960, 500, 330) if w < ow), 330)
+    ii = api(iiprop="url|extmetadata", iiurlwidth=width); md = ii.get("extmetadata", {})
+    clean = lambda v: re.sub(r"\s+", " ", re.sub("<[^>]+>", "", v or "")).strip()
+    meta_ = {"title": title, "artist": clean(md.get("Artist", {}).get("value"))[:60],
+             "license": clean(md.get("LicenseShortName", {}).get("value")), "url": ii.get("descriptionurl")}
+    time.sleep(2)
+    open(img_p, "wb").write(get(ii.get("thumburl") or ii["url"]))
+    json.dump(meta_, open(meta_p, "w"))
+    return Image.open(img_p), meta_
 
 
 def main():
@@ -249,8 +280,24 @@ def main():
         except (FileNotFoundError, OSError, KeyError) as e:
             out["warnings"].append(f"presenter: {e}")
 
-    # character-explainer: face_closed / face_open / body_front / body_back from one outfit row of the cast sheet
-    if s["meta"].get("style") == "character-explainer" and cs:
+    # archival images (Wikimedia Commons "File:..." titles or URLs) with credits, for the history-doc style
+    if cfg.get("images"):
+        out["images"], out["credits"] = {}, []
+        for key, ref in cfg["images"].items():
+            spec = ref if isinstance(ref, dict) else {"file": ref}
+            try:
+                if spec["file"].startswith("File:"): time.sleep(3)
+                im, meta_ = _fetch_commons(spec["file"]) if spec["file"].startswith("File:") else (_load_user(spec["file"]), {})
+                im = im.convert("RGB"); im.thumbnail((1800, 2600))
+                out["images"][key] = {"src": _data_url(im, "JPEG", 88)}
+                short = spec.get("credit") or ", ".join(x for x in (meta_.get("artist"), meta_.get("license")) if x)
+                out["credits"].append({"key": key, "short": short, **meta_})
+                print(f"  image {key}: {im.size[0]}x{im.size[1]} · {short}")
+            except Exception as e:  # noqa: BLE001
+                out["warnings"].append(f"image {key}: {e}")
+
+    # character-explainer / history-doc: face_closed / face_open / body_front / body_back from one outfit row
+    if s["meta"].get("style") in ("character-explainer", "history-doc") and cs:
         try:
             import cutout
             sheet = _load_user(cs["path"])
