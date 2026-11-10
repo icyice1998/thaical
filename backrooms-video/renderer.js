@@ -590,9 +590,13 @@ const BR = (() => {
     if (tc && t < tc.t + tc.dur) {
       const a = 1 - smooth(tc.t + tc.dur - 0.8, tc.t + tc.dur, t);
       const pop = 0.85 + 0.15 * smooth(tc.t, tc.t + 0.35, t);
-      g.save(); g.globalAlpha = a; g.translate(540, 250); g.scale(pop, pop);
-      outlined(g, 'หลุดเข้า', 0, 0, '800 110px Kanit', '#fff', '#1a1a1a', 16);
-      outlined(g, 'BACKROOMS', 0, 140, '800 150px Kanit', '#e52222', '#fff', 14);
+      g.save(); g.globalAlpha = a; g.translate(540, 360); g.scale(pop, pop);
+      const words = TL.meta.title.split(' ');
+      const big = words.length > 1 ? words.pop() : TL.meta.title, small = words.length > 1 || words[0] !== big ? words.join(' ') : '';
+      const bigTxt = /^[\x00-\x7f]+$/.test(big) ? big.toUpperCase() : big;
+      g.font = '800 150px Kanit'; const fit = Math.min(1, 980 / g.measureText(bigTxt).width);
+      if (small) outlined(g, small, 0, 0, '800 110px Kanit', '#fff', '#1a1a1a', 16);
+      outlined(g, bigTxt, 0, 140, `800 ${Math.floor(150 * fit)}px Kanit`, '#e52222', '#fff', 14);
       outlined(g, TL.meta.subtitle, 0, 230, '700 52px Kanit', '#ffd23f', '#1a1a1a', 10);
       g.restore();
     }
@@ -775,9 +779,11 @@ const BR = (() => {
     gr.addColorStop(0, 'rgba(0,0,0,.55)'); gr.addColorStop(0.45, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,.5)');
     g.fillStyle = gr; g.fillRect(0, 0, OUT_W, OUT_H);
     const words = TL.meta.title.split(' ');
-    const big = words.length > 1 ? words.pop() : TL.meta.title, small = words.join(' ');
+    const big = words.length > 1 ? words.pop() : TL.meta.title, small = words.length > 1 || words[0] !== big ? words.join(' ') : '';
     if (small) outlined(g, small, 540, 330, '800 130px Kanit', '#fff', '#1a1a1a', 18);
-    outlined(g, /^[\x00-\x7f]+$/.test(big) ? big.toUpperCase() : big, 540, 500, `800 ${big.length > 9 ? 150 : 180}px Kanit`, '#e52222', '#fff', 16);
+    const bigTxt = /^[\x00-\x7f]+$/.test(big) ? big.toUpperCase() : big;
+    g.font = '800 180px Kanit'; const fit = Math.min(1, 1000 / g.measureText(bigTxt).width);
+    outlined(g, bigTxt, 540, 500, `800 ${Math.floor(180 * fit)}px Kanit`, '#e52222', '#fff', 16);
     if (TL.meta.subtitle) outlined(g, TL.meta.subtitle, 540, 610, '700 64px Kanit', '#ffd23f', '#1a1a1a', 12);
     g.fillStyle = '#ff3030'; g.beginPath(); g.arc(70, 1820, 16, 0, 7); g.fill();
     outlined(g, 'REC', 100, 1834, '600 44px "IBM Plex Mono"', '#fff', 'rgba(0,0,0,.6)', 6, 'left');
