@@ -1,0 +1,323 @@
+{
+ "meta": {
+  "title": "หลุดเข้า Backrooms",
+  "subtitle": "EP.1 · วอร์ดที่ไม่มีวันจบ",
+  "date": "NOV 09 2026",
+  "watermark": "เรื่องสมมติ · ภาพวาดด้วยโค้ด",
+  "fps": 30,
+  "lead_in": 1.2,
+  "tail": 3.5
+ },
+ "voices": {
+  "ton": {
+   "name": "ต้น",
+   "voice": "a50a04b8-35ee-487e-8b87-97f0eee68a64",
+   "color": "#7fb8ff",
+   "fallback": [
+    {
+     "provider": "edge",
+     "voice": "th-TH-NiwatNeural",
+     "rate": "+12%"
+    }
+   ],
+   "provider": "cartesia",
+   "voice_name": "Krit - Efficient Envoy",
+   "model": "sonic-3",
+   "speed": 1.05,
+   "look": "operator"
+  },
+  "mind": {
+   "name": "มายด์",
+   "voice": "ccc7bb22-dcd0-42e4-822e-0731b950972f",
+   "color": "#ffd166",
+   "fallback": [
+    {
+     "provider": "edge",
+     "voice": "th-TH-PremwadeeNeural",
+     "rate": "+12%"
+    },
+    {
+     "provider": "edge",
+     "voice": "en-US-EmmaMultilingualNeural",
+     "rate": "+12%"
+    }
+   ],
+   "provider": "cartesia",
+   "voice_name": "Suda - Fortune Teller",
+   "model": "sonic-3",
+   "speed": 1.05,
+   "look": "doctor"
+  }
+ },
+ "lines": [
+  {
+   "who": "ton",
+   "text": "มายด์ ได้ยินไหม กล้องติดแล้วนะ ตอนนี้อยู่ที่ไหน",
+   "cues": [
+    {
+     "type": "scene",
+     "value": "level0",
+     "at": "start",
+     "offset": -1.2
+    },
+    {
+     "type": "title",
+     "dur": 4.0,
+     "at": "start",
+     "offset": -1.0
+    },
+    {
+     "type": "walk",
+     "value": 0.0,
+     "at": "start",
+     "offset": -1.2
+    }
+   ]
+  },
+  {
+   "who": "mind",
+   "text": "ไม่รู้เลย เมื่อกี้ยังยืนรอลิฟต์หลังลงเวรอยู่เลย พอพิงกำแพงปุ๊บ ก็ทะลุมาโผล่ห้องสีเหลืองนี่",
+   "cues": [
+    {
+     "type": "walk",
+     "value": 0.9,
+     "at": "start",
+     "offset": 0.4
+    }
+   ]
+  },
+  {
+   "who": "ton",
+   "text": "นั่นคือ Backrooms เลเวลศูนย์ พรมชื้น ไฟนีออนหึ่งตลอดเวลา แล้วห้องก็ซ้ำกันไปเรื่อยๆ ไม่มีวันจบ"
+  },
+  {
+   "who": "mind",
+   "text": "กลิ่นเหมือนพรมเปียกจริงด้วย แล้วจะออกยังไง",
+   "cues": [
+    {
+     "type": "mission",
+     "value": "หาทางออก · ห้ามวิ่ง",
+     "at": "end"
+    }
+   ]
+  },
+  {
+   "who": "ton",
+   "text": "ตามเรื่องเล่า ห้ามวิ่ง ฟังเสียงไฟไว้ ถ้าเสียงหึ่งเงียบเมื่อไหร่ ให้หยุดเดินทันที"
+  },
+  {
+   "who": "mind",
+   "text": "เดี๋ยวนะ มีไฟฉายตกอยู่บนพื้น เก็บไว้ก่อน",
+   "cues": [
+    {
+     "type": "toast",
+     "value": "ได้ของ · ไฟฉาย +1",
+     "at": "end",
+     "offset": -0.6
+    }
+   ]
+  },
+  {
+   "who": "mind",
+   "text": "ต้น... เสียงไฟเงียบแล้ว",
+   "gap_before": 1.6,
+   "cues": [
+    {
+     "type": "lights",
+     "value": 0.0,
+     "dur": 2.2,
+     "at": "start",
+     "offset": -2.4
+    },
+    {
+     "type": "walk",
+     "value": 0.0,
+     "at": "start",
+     "offset": -0.6
+    }
+   ],
+   "emotion": "scared"
+  },
+  {
+   "who": "ton",
+   "text": "หยุดเดิน เปิดไฟฉาย แล้วค่อยๆ ส่องไปข้างหน้า",
+   "cues": [
+    {
+     "type": "flashlight",
+     "value": 1,
+     "at": "end",
+     "offset": -0.4
+    }
+   ]
+  },
+  {
+   "who": "mind",
+   "text": "มีอะไรยืนอยู่ตรงสุดทาง มัน... ยิ้มอยู่",
+   "cues": [
+    {
+     "type": "entity",
+     "value": 1,
+     "at": "start",
+     "offset": 0.0
+    },
+    {
+     "type": "shake",
+     "dur": 0.8,
+     "at": "end",
+     "offset": -0.8
+    }
+   ],
+   "emotion": "scared"
+  },
+  {
+   "who": "ton",
+   "text": "อย่าส่องหน้ามันนาน หากำแพงที่กระพริบ แล้วพิงมันเลย เร็ว!",
+   "cues": [
+    {
+     "type": "mission",
+     "value": "ภารกิจใหม่ · หากำแพงที่กระพริบ",
+     "at": "start",
+     "offset": 0.4
+    },
+    {
+     "type": "walk",
+     "value": -0.6,
+     "at": "end",
+     "offset": -1.0
+    }
+   ],
+   "emotion": "angry"
+  },
+  {
+   "who": "mind",
+   "text": "ว้าย! ทะลุอีกแล้ว!",
+   "cues": [
+    {
+     "type": "glitch",
+     "dur": 1.2,
+     "at": "start",
+     "offset": -0.3
+    },
+    {
+     "type": "scene",
+     "value": "ward",
+     "at": "end",
+     "offset": 0.3
+    },
+    {
+     "type": "flashlight",
+     "value": 0,
+     "at": "end",
+     "offset": 0.3
+    },
+    {
+     "type": "entity",
+     "value": 0,
+     "at": "end",
+     "offset": 0.3
+    },
+    {
+     "type": "mission",
+     "value": "",
+     "at": "end",
+     "offset": 0.3
+    },
+    {
+     "type": "walk",
+     "value": 0.8,
+     "at": "end",
+     "offset": 0.9
+    }
+   ],
+   "emotion": "scared"
+  },
+  {
+   "who": "mind",
+   "text": "ที่นี่... เป็นทางเดินโรงพยาบาล ผนังกระเบื้องเขียว มีแต่เตียงว่างเต็มไปหมด",
+   "gap_before": 1.0,
+   "emotion": "curious"
+  },
+  {
+   "who": "ton",
+   "text": "เลเวลนี้ไม่มีในบันทึกเลยนะ ระวังตัวด้วย"
+  },
+  {
+   "who": "mind",
+   "text": "ป้ายข้างหน้าเขียนว่าทางออก แต่ลูกศรชี้ไปทุกทิศเลย",
+   "cues": [
+    {
+     "type": "mission",
+     "value": "หาทางออก · LEVEL ???",
+     "at": "start"
+    }
+   ],
+   "emotion": "curious"
+  },
+  {
+   "who": "ton",
+   "text": "ดูที่พื้นสิ มีเส้นนำทางไหม เส้นสีแดงไปห้องฉุกเฉิน ปกติจะพาไปถึงประตูใหญ่",
+   "cues": [
+    {
+     "type": "mission",
+     "value": "ภารกิจใหม่ · เดินตามเส้นสีแดง",
+     "at": "end"
+    }
+   ]
+  },
+  {
+   "who": "mind",
+   "text": "จริงด้วย เดินตามเส้นมาเรื่อยๆ เจอประตูห้องฉุกเฉินแล้ว มีแสงลอดออกมา",
+   "gap_before": 1.4,
+   "cues": [
+    {
+     "type": "walk",
+     "value": 0.0,
+     "at": "end",
+     "offset": -1.0
+    }
+   ],
+   "emotion": "excited"
+  },
+  {
+   "who": "ton",
+   "text": "ค่อยๆ เปิด อย่าเพิ่งก้าวเข้าไปนะ",
+   "cues": [
+    {
+     "type": "whiteout",
+     "dur": 1.0,
+     "at": "end",
+     "offset": 0.0
+    },
+    {
+     "type": "scene",
+     "value": "doors",
+     "at": "end",
+     "offset": 0.5
+    },
+    {
+     "type": "mission",
+     "value": "",
+     "at": "end",
+     "offset": 0.5
+    }
+   ]
+  },
+  {
+   "who": "mind",
+   "text": "ข้างในมีประตูอีกสามบาน เขียนว่า กลับบ้าน ลึกลงไป แล้วก็ ห้ามเปิด",
+   "gap_before": 1.2,
+   "emotion": "curious"
+  },
+  {
+   "who": "ton",
+   "text": "ถ้าเป็นคุณ จะให้มายด์เปิดบานไหน เมนต์มาเลย",
+   "cues": [
+    {
+     "type": "endcard",
+     "at": "start",
+     "offset": 0.2
+    }
+   ]
+  }
+ ]
+}

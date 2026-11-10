@@ -1,0 +1,335 @@
+"""Step 0 (optional): AI images and music for a project, read from script.json → "assets".
+
+  "assets": {
+    "image_provider": "openai" | "google",
+    "cover":     {"prompt": "..."},                  # cover art (9:16); the title is drawn on top by the renderer
+    "portraits": "code" | "ai-pixel" | "ai-photo",   # uses each character's "portrait_prompt"
+                                                     # or its own files: voices.<id>.images (see below)
+    "textures":  "code" | "ai",                      # wall/floor/ceiling tiles for level0 and ward
+    "cast_sheet": {"path": "characters/cast.png", "rows": ["mind", "ton"], "explorer": "mind"},  # one image, 4x2 grid
+    "music":     {"prompt": "...", "bpm": 70, "seconds": 40, "volume": 0.5, "model": "lyria-3-clip-preview"}
+  }
+
+Your own character set (e.g. made in ChatGPT), per character in script.json → voices.<id>.images:
+    {"portrait": "chars/mind.png", "portrait_talk": "chars/mind_talk.png",      # closed / open mouth = lip-sync
+     "sprite_front": "chars/mind_front.png", "sprite_back": "chars/mind_back.png"}  # full body, explorer only
+Paths are relative to the project folder (or absolute, or http(s) URLs). Solid backgrounds are keyed out for sprites.
+
+Writes PROJECT/build/assets.json (data URLs for the renderer) and build/assets/music.wav.
+Anything that fails falls back to the code-drawn version and is listed in "warnings".
+Usage: python3 build_assets.py [PROJECT_DIR]
+"""
+import base64, hashlib, io, json, os, subprocess, sys, time
+
+import numpy as np
+
+from PIL import Image
+
+import media_providers as mp
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+PROJECT = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else HERE
+BUILD = os.path.join(PROJECT, "build")
+ADIR = os.path.join(BUILD, "assets")
+CACHE = os.path.join(ADIR, "cache")
+os.makedirs(CACHE, exist_ok=True)
+
+STYLE = ("retro 1990s low-poly video game art, muted VHS colours, liminal space, eerie, "
+         "no text, no letters, no watermark")
+TEXTURES = {  # name in renderer.js -> prompt
+    "yWall":  "seamless tileable texture, flat front view, old mono-yellow wallpaper with faint vertical stripes and a dirty brown baseboard strip at the bottom, office backrooms",
+    "carpet": "seamless tileable texture, top-down view, damp worn brown-beige office carpet with stains",
+    "yCeil":  "seamless tileable texture, view from below, stained off-white acoustic drop-ceiling tile with thin grey grid",
+    "gWall":  "seamless tileable texture, flat front view, hospital corridor wall: cream paint on top, pale green square tiles on the lower half, a dark handrail across the middle",
+    "vinyl":  "seamless tileable texture, top-down view, speckled light grey hospital vinyl floor tiles",
+    "wCeil":  "seamless tileable texture, view from below, clean white hospital ceiling tiles with grid",
+}
+
+
+def _cached(kind, provider, prompt, aspect, transparent=False):
+    h = hashlib.sha1(f"{kind}|{provider}|{mp.OPENAI_IMAGE_MODEL}|{mp.GOOGLE_IMAGE_MODEL}|{aspect}|{transparent}|{prompt}|{mp.MOCK}".encode()).hexdigest()[:16]
+    path = os.path.join(CACHE, f"{kind}-{h}.png")
+    if not os.path.exists(path):
+        data = mp.image(provider, prompt, aspect, transparent)
+        Image.open(io.BytesIO(data)).save(path)
+    return Image.open(path).convert("RGBA")
+
+
+def _data_url(im, fmt="PNG", quality=88):
+    buf = io.BytesIO()
+    if fmt == "JPEG": im = im.convert("RGB")
+    im.save(buf, fmt, **({"quality": quality} if fmt == "JPEG" else {}))
+    return f"data:image/{fmt.lower()};base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def _crop_to(im, w, h, top_bias=0.0):
+    sw, sh = im.size; tr = w / h
+    if sw / sh > tr:
+        nw = int(sh * tr); x = (sw - nw) // 2; return im.crop((x, 0, x + nw, sh))
+    nh = int(sw / tr); y = int((sh - nh) * (0.5 - top_bias / 2)); return im.crop((0, y, sw, y + nh))
+
+
+def _load_user(ref):
+    if isinstance(ref, Image.Image):
+        return ref
+    if ref.startswith(("http://", "https://")):
+        import urllib.request
+        with urllib.request.urlopen(ref, timeout=60) as r:
+            return Image.open(io.BytesIO(r.read())).convert("RGBA")
+    for base in (PROJECT, HERE, os.getcwd()):
+        p = ref if os.path.isabs(ref) else os.path.join(base, ref)
+        if os.path.exists(p):
+            return Image.open(p).convert("RGBA")
+    raise FileNotFoundError(ref)
+
+
+def _key_out(im, tol=38):
+    """Make a flat background transparent (flood fill from the corners) unless the image already has alpha."""
+    a = np.array(im)
+    if (a[..., 3] < 250).mean() > 0.02:
+        return im
+    from collections import deque
+    h, w = a.shape[:2]; rgb = a[..., :3].astype(int)
+    seen = np.zeros((h, w), bool); q = deque()
+    for y, x in ((0, 0), (0, w - 1), (h - 1, 0), (h - 1, w - 1)):
+        q.append((y, x)); seen[y, x] = True
+    ref = np.median(np.array([rgb[0, 0], rgb[0, -1], rgb[-1, 0], rgb[-1, -1]]), 0)
+    while q:
+        y, x = q.popleft()
+        a[y, x, 3] = 0
+        for ny, nx in ((y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)):
+            if 0 <= ny < h and 0 <= nx < w and not seen[ny, nx] and np.abs(rgb[ny, nx] - ref).sum() < tol * 3:
+                seen[ny, nx] = True; q.append((ny, nx))
+    return Image.fromarray(a)
+
+
+def _portrait_from(im, mode):
+    im = _crop_to(im, 40, 44, top_bias=0.3)
+    if mode == "ai-pixel":
+        return im.resize((40, 44), Image.BOX).convert("RGB").quantize(32, method=Image.MEDIANCUT).convert("RGBA")
+    return im.resize((300, 330), Image.LANCZOS)
+
+
+def _sprite_from(im, height=160):
+    im = _key_out(im)
+    bbox = im.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
+    if bbox: im = im.crop(bbox)
+    w = max(4, round(im.width * height / im.height))
+    return im.resize((w, height), Image.BOX)
+
+
+def _fetch_commons(title):
+    """Download a Wikimedia Commons file (1600 px thumb) + artist/licence metadata, cached, with 429 backoff."""
+    import re, ssl, time, urllib.error, urllib.parse, urllib.request
+    h = hashlib.sha1(title.encode()).hexdigest()[:16]
+    img_p, meta_p = os.path.join(CACHE, f"commons-{h}.jpg"), os.path.join(CACHE, f"commons-{h}.json")
+    if os.path.exists(img_p) and os.path.exists(meta_p):
+        return Image.open(img_p), json.load(open(meta_p))
+    ctx = ssl.create_default_context(cafile=mp.CA) if mp.CA else None
+    ua = {"User-Agent": "video-pipeline/1.0 (educational short videos)"}
+    def get(url):
+        for k in range(6):
+            try:
+                return urllib.request.urlopen(urllib.request.Request(url, headers=ua), context=ctx, timeout=60).read()
+            except urllib.error.HTTPError as e:
+                if e.code != 429 or k == 5: raise
+                time.sleep(10 * (k + 1))
+    api = lambda **kw: next(iter(json.loads(get("https://commons.wikimedia.org/w/api.php?" + urllib.parse.urlencode(
+        {"action": "query", "titles": title, "prop": "imageinfo", "format": "json", **kw})))["query"]["pages"].values()))["imageinfo"][0]
+    ow = api(iiprop="size")["width"]
+    # Wikimedia only serves standard thumbnail widths without throttling: pick the largest one below the original
+    width = next((w for w in (1920, 1280, 960, 500, 330) if w < ow), 330)
+    ii = api(iiprop="url|extmetadata", iiurlwidth=width); md = ii.get("extmetadata", {})
+    clean = lambda v: re.sub(r"\s+", " ", re.sub("<[^>]+>", "", v or "")).strip()
+    meta_ = {"title": title, "artist": clean(md.get("Artist", {}).get("value"))[:60],
+             "license": clean(md.get("LicenseShortName", {}).get("value")), "url": ii.get("descriptionurl")}
+    time.sleep(2)
+    open(img_p, "wb").write(get(ii.get("thumburl") or ii["url"]))
+    json.dump(meta_, open(meta_p, "w"))
+    return Image.open(img_p), meta_
+
+
+def main():
+    s = json.load(open(os.path.join(PROJECT, "script.json"), encoding="utf-8"))
+    cfg = s.get("assets") or {}
+    prov = cfg.get("image_provider", "openai")
+    out = {"portraits": {}, "textures": {}, "cover_art": None, "music": None, "warnings": [], "provider": prov}
+
+    # cover art
+    cover = cfg.get("cover")
+    if cover:
+        prompt = cover.get("prompt") or f"Key art for a horror short video titled '{s['meta']['title']}'. {s['meta'].get('subtitle', '')}"
+        try:
+            im = _crop_to(_cached("cover", prov, f"{prompt}. Vertical poster composition, empty space at the top for a title. {STYLE}", "9:16"), 1080, 1920)
+            out["cover_art"] = _data_url(im.resize((1080, 1920), Image.LANCZOS), "JPEG")
+            print("  cover art: ok")
+        except mp.MediaUnavailable as e:
+            out["warnings"].append(f"cover: {e}")
+
+    # cast sheet: one image, a grid with one row per character (default 4 columns:
+    # portrait closed | portrait mouth open | full body front | full body back)
+    sheet_imgs = {}
+    cs = cfg.get("cast_sheet")
+    if cs:
+        try:
+            sheet = _load_user(cs["path"]).convert("RGBA")
+            rows = cs.get("rows") or list(s["voices"])
+            cols = cs.get("columns", ["portrait", "portrait_talk", "sprite_front", "sprite_back"])
+            cw, ch = sheet.width / len(cols), sheet.height / len(rows)
+            pad = cs.get("gutter", 0.03)  # trim gutters/frame lines between cells
+            for r, who in enumerate(rows):
+                if who not in s["voices"]: continue
+                cells = {}
+                for c, pose in enumerate(cols):
+                    if not pose: continue
+                    box = (int((c + pad) * cw), int((r + pad) * ch), int((c + 1 - pad) * cw), int((r + 1 - pad) * ch))
+                    cells[pose] = sheet.crop(box)
+                if who != cs.get("explorer", rows[0]):
+                    cells.pop("sprite_front", None); cells.pop("sprite_back", None)
+                sheet_imgs[who] = cells
+            print(f"  cast sheet: {sheet.width}x{sheet.height}, rows={rows}, explorer={cs.get('explorer', rows[0])}")
+        except (FileNotFoundError, OSError, KeyError) as e:
+            out["warnings"].append(f"cast sheet: {e}")
+
+    # portraits + sprites from the user's own files (take priority over generated ones)
+    mode = cfg.get("portraits", "code")
+    out["sprites"] = {}
+    for key, v in s["voices"].items():
+        imgs = {**sheet_imgs.get(key, {}), **(v.get("images") or {})}
+        try:
+            if imgs.get("portrait"):
+                pm = "ai-pixel" if mode == "ai-pixel" else "ai-photo"
+                out["portraits"][key] = {"mode": pm, "src": _data_url(_portrait_from(_load_user(imgs["portrait"]), pm)), "user": True}
+                if imgs.get("portrait_talk"):
+                    out["portraits"][key]["talk"] = _data_url(_portrait_from(_load_user(imgs["portrait_talk"]), pm))
+                print(f"  portrait {key}: user file" + (" + talk frame" if imgs.get("portrait_talk") else ""))
+            if imgs.get("sprite_front"):
+                front = _sprite_from(_load_user(imgs["sprite_front"]))
+                back = _sprite_from(_load_user(imgs["sprite_back"])) if imgs.get("sprite_back") else front
+                out["sprites"]["explorer"] = {"front": _data_url(front), "back": _data_url(back), "who": key}
+                print(f"  explorer sprite: {key}")
+        except (FileNotFoundError, OSError) as e:
+            out["warnings"].append(f"images {key}: {e}")
+    if mode in ("ai-pixel", "ai-photo"):
+        for key, v in s["voices"].items():
+            if key in out["portraits"]: continue
+            p = v.get("portrait_prompt")
+            if not p:
+                out["warnings"].append(f"portrait {key}: no portrait_prompt, using code art"); continue
+            style = ("16-bit pixel art character portrait, head and shoulders, front facing, plain dark background"
+                     if mode == "ai-pixel" else
+                     "photorealistic head-and-shoulders portrait photo, front facing, neutral expression, mouth closed, studio light, plain dark background")
+            try:
+                im = _crop_to(_cached("portrait", prov, f"{p}. {style}. No text.", "1:1"), 40, 44, top_bias=0.3)
+                if mode == "ai-pixel":
+                    im = im.resize((40, 44), Image.BOX).convert("RGB").quantize(32, method=Image.MEDIANCUT).convert("RGBA")
+                else:
+                    im = im.resize((300, 330), Image.LANCZOS)
+                out["portraits"][key] = {"mode": mode, "src": _data_url(im)}
+                print(f"  portrait {key}: ok")
+            except mp.MediaUnavailable as e:
+                out["warnings"].append(f"portrait {key}: {e}")
+
+    # textures
+    if cfg.get("textures") == "ai":
+        for name, prompt in TEXTURES.items():
+            try:
+                im = _cached("tex", prov, f"{prompt}. {STYLE}", "1:1").resize((64, 64), Image.BOX).convert("RGB")
+                out["textures"][name] = _data_url(im)
+                print(f"  texture {name}: ok")
+            except mp.MediaUnavailable as e:
+                out["warnings"].append(f"texture {name}: {e}")
+
+    # music
+    m = cfg.get("music")
+    if m:
+        h = hashlib.sha1(json.dumps([m, mp.MOCK], sort_keys=True).encode()).hexdigest()[:16]
+        raw = os.path.join(CACHE, f"music-{h}.bin"); wav = os.path.join(ADIR, "music.wav")
+        try:
+            if not os.path.exists(raw):
+                data, mime = mp.music(m.get("prompt", "dark ambient horror drone, fluorescent hum, slow, sparse piano"),
+                                      seconds=m.get("seconds", 40), bpm=m.get("bpm"), model=m.get("model"))
+                open(raw, "wb").write(data)
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", raw, "-ac", "2", "-ar", "48000", wav], check=True)
+            out["music"] = {"path": wav, "volume": m.get("volume", 0.5)}
+            print("  music: ok")
+        except (mp.MediaUnavailable, subprocess.CalledProcessError) as e:
+            out["warnings"].append(f"music: {e}")
+    elif os.path.exists(os.path.join(ADIR, "music.wav")):
+        os.remove(os.path.join(ADIR, "music.wav"))
+
+    # presenter-explainer: high-res cut-outs of the presenter (one per pose)
+    if s["meta"].get("style") == "presenter-explainer":
+        poses = []
+        ps = cfg.get("pose_sheet")  # {"path": ..., "columns": 4, "rows": 1}: one pose per cell
+        try:
+            if ps:
+                sheet = _load_user(ps["path"]); nc, nr = ps.get("columns", 4), ps.get("rows", 1)
+                cw, ch = sheet.width / nc, sheet.height / nr
+                for r in range(nr):
+                    for c in range(nc):
+                        cell = sheet.crop((int((c + .03) * cw), int((r + .03) * ch), int((c + .97) * cw), int((r + .97) * ch)))
+                        poses.append(_sprite_from(cell, height=cell.height))
+            else:
+                who = cfg.get("presenter") or (cs or {}).get("explorer") or next(iter(s["voices"]))
+                src = (s["voices"][who].get("images") or {}).get("sprite_front") or sheet_imgs.get(who, {}).get("sprite_front")
+                if src is not None:
+                    im = _load_user(src); poses.append(_sprite_from(im, height=im.height))
+            out["presenter"] = [_data_url(p_) for p_ in poses if p_.getbbox()]
+            print(f"  presenter poses: {len(out['presenter'])}")
+        except (FileNotFoundError, OSError, KeyError) as e:
+            out["warnings"].append(f"presenter: {e}")
+
+    # archival images (Wikimedia Commons "File:..." titles or URLs) with credits, for the history-doc style
+    if cfg.get("images"):
+        out["images"], out["credits"] = {}, []
+        for key, ref in cfg["images"].items():
+            spec = ref if isinstance(ref, dict) else {"file": ref}
+            try:
+                if spec["file"].startswith("File:"): time.sleep(3)
+                im, meta_ = _fetch_commons(spec["file"]) if spec["file"].startswith("File:") else (_load_user(spec["file"]), {})
+                im = im.convert("RGB"); im.thumbnail((1800, 2600))
+                out["images"][key] = {"src": _data_url(im, "JPEG", 88)}
+                short = spec.get("credit") or ", ".join(x for x in (meta_.get("artist"), meta_.get("license")) if x)
+                out["credits"].append({"key": key, "short": short, **meta_})
+                print(f"  image {key}: {im.size[0]}x{im.size[1]} · {short}")
+            except Exception as e:  # noqa: BLE001
+                out["warnings"].append(f"image {key}: {e}")
+
+    # character-explainer / history-doc: face_closed / face_open / body_front / body_back from one outfit row
+    if s["meta"].get("style") in ("character-explainer", "history-doc") and cs:
+        try:
+            import cutout
+            sheet = _load_user(cs["path"])
+            rows_all = cs.get("rows") or list(s["voices"])
+            row = cfg.get("outfit_row", rows_all.index(cs.get("explorer", rows_all[0])))
+            panels = cutout.slice_sheet(sheet, rows=len(rows_all), cols=4)[row]
+            cuts = {"face_closed": cutout.cut(panels[0], "face"), "face_open": cutout.cut(panels[1], "face"),
+                    "body_front": cutout.cut(panels[2], "body"), "body_back": cutout.cut(panels[3], "body")}
+            cutout.preview_on_dark(list(cuts.values()), os.path.join(BUILD, "cutout_preview.jpg"))
+            out["cx"] = {k: _data_url(v) for k, v in cuts.items()}
+            print(f"  character cut-outs: row {row} -> {', '.join(cuts)} (preview: build/cutout_preview.jpg)")
+        except Exception as e:  # noqa: BLE001
+            out["warnings"].append(f"cut-outs: {e}")
+
+    # Blender set for the 3D styles (glTF binary embedded as a data URL so the file:// page can load it)
+    model = cfg.get("scene_model")
+    if model is None and s["meta"].get("style") == "character-explainer" and os.path.exists(os.path.join(HERE, "models", "clinic.glb")):
+        model = "models/clinic.glb"
+    if model:
+        try:
+            mp_ = next(p_ for p_ in (model, os.path.join(PROJECT, model), os.path.join(HERE, model)) if os.path.exists(p_))
+            out["model"] = "data:model/gltf-binary;base64," + base64.b64encode(open(mp_, "rb").read()).decode()
+            print(f"  scene model: {model} ({os.path.getsize(mp_) // 1024} KB)")
+        except StopIteration:
+            out["warnings"].append(f"scene model not found: {model}")
+
+    json.dump(out, open(os.path.join(BUILD, "assets.json"), "w"))
+    for w in out["warnings"]:
+        print("  ! " + w)
+    print(f"assets: cover={'yes' if out['cover_art'] else 'no'} portraits={len(out['portraits'])} sprites={len(out['sprites'])} "
+          f"textures={len(out['textures'])} music={'yes' if out['music'] else 'no'} -> build/assets.json")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "backrooms-video": {
+      "command": "python3",
+      "args": [
+        "backrooms-video/mcp_server.py"
+      ],
+      "env": {
+        "CARTESIA_API_KEY": "${CARTESIA_API_KEY}",
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+        "GEMINI_API_KEY": "${GEMINI_API_KEY}"
+      }
+    }
+  }
+}
