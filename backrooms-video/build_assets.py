@@ -312,6 +312,18 @@ def main():
         except Exception as e:  # noqa: BLE001
             out["warnings"].append(f"cut-outs: {e}")
 
+    # Blender set for the 3D styles (glTF binary embedded as a data URL so the file:// page can load it)
+    model = cfg.get("scene_model")
+    if model is None and s["meta"].get("style") == "character-explainer" and os.path.exists(os.path.join(HERE, "models", "clinic.glb")):
+        model = "models/clinic.glb"
+    if model:
+        try:
+            mp_ = next(p_ for p_ in (model, os.path.join(PROJECT, model), os.path.join(HERE, model)) if os.path.exists(p_))
+            out["model"] = "data:model/gltf-binary;base64," + base64.b64encode(open(mp_, "rb").read()).decode()
+            print(f"  scene model: {model} ({os.path.getsize(mp_) // 1024} KB)")
+        except StopIteration:
+            out["warnings"].append(f"scene model not found: {model}")
+
     json.dump(out, open(os.path.join(BUILD, "assets.json"), "w"))
     for w in out["warnings"]:
         print("  ! " + w)

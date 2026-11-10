@@ -224,7 +224,7 @@ def set_scenes(project_id: str, cues: list[dict], replace: bool = True) -> dict:
 def set_assets(project_id: str, image_provider: str = "openai", cover_prompt: str | None = None,
                portraits: str = "code", textures: str = "code", music_prompt: str | None = None,
                music_bpm: int | None = None, music_seconds: int = 40, music_volume: float = 0.5,
-               music_model: str | None = None) -> dict:
+               music_model: str | None = None, scene_model: str | None = None) -> dict:
     """Optional AI media (OpenAI or Google images, Google Lyria music). Keys come from the server's environment.
 
     image_provider: "openai" (gpt-image) | "google" (Imagen)
@@ -233,6 +233,7 @@ def set_assets(project_id: str, image_provider: str = "openai", cover_prompt: st
     textures: "code" | "ai" (wall/floor/ceiling tiles for level0 and ward)
     music_prompt: Lyria prompt for the background score, e.g. "slow dark ambient, detuned synth pad, distant piano"; omit for the synthesized drone
     music_model: "lyria-3-clip-preview" (default) | "lyria-3-pro-preview" | "realtime"
+    scene_model: path to a Blender-exported .glb set for character-explainer (default: models/clinic.glb; "none" = code-built room)
     """
     if image_provider not in mp.IMAGE_PROVIDERS:
         raise ValueError(f"image_provider must be one of {list(mp.IMAGE_PROVIDERS)}")
@@ -245,7 +246,8 @@ def set_assets(project_id: str, image_provider: str = "openai", cover_prompt: st
         a["music"] = {"prompt": music_prompt, "seconds": music_seconds, "volume": music_volume}
         if music_bpm: a["music"]["bpm"] = music_bpm
         if music_model: a["music"]["model"] = music_model
-    s["assets"] = a
+    if scene_model: a["scene_model"] = None if scene_model == "none" else scene_model
+    s["assets"] = {**s.get("assets", {}), **a}
     _save(project_id, s)
     av = mp.available()
     need = []

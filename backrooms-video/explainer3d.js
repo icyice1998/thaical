@@ -76,7 +76,7 @@ const BR = (() => {
       c.beginPath(); c.moveTo(160, 154); c.lineTo(160, 300); c.moveTo(100, 200); c.lineTo(220, 200); c.moveTo(160, 300); c.lineTo(115, 390); c.moveTo(160, 300); c.lineTo(205, 390); c.stroke();
       c.fillStyle = '#e05a47'; [[160, 190], [130, 240], [190, 240], [160, 280], [125, 350], [195, 350]].forEach(([x, y]) => { c.beginPath(); c.arc(x, y, 7, 0, 7); c.fill(); });
     }) }));
-    poster.position.set(-0.6, 1.75, -2.97); scene.add(poster);
+    poster.position.set(-0.6, 1.75, -2.965); scene.add(poster); P.poster = poster;
   }
 
   function buildProps() {
@@ -137,6 +137,25 @@ const BR = (() => {
       c.fillStyle = '#fff'; c.font = '700 22px Inter'; c.fillText('SESSIONS', 60, 28); c.strokeStyle = '#d0d6db';
       for (let i = 0; i < 5; i++) for (let j = 0; j < 4; j++) c.strokeRect(14 + i * 43, 52 + j * 36, 40, 33);
     }) })); P.cal.position.set(-2.6, 1.6, -2.97); scene.add(P.cal);
+  }
+
+  // ---------- Blender set (glTF) ----------
+  // The model replaces every static piece built above; animated props (needles, water, wires, LED, checks,
+  // packets, poster, calendar) stay. Clock hands, sharps lid and Station_* empties are taken from the model.
+  async function useModel(dataUrl) {
+    const buf = await (await fetch(dataUrl)).arrayBuffer();
+    const gltf = await new Promise((res, rej) => new THREE.GLTFLoader().parse(buf, '', res, rej));
+    const keep = new Set([...P.checks, ...P.needles, ...P.bubbles, ...P.packets, ...P.wires, P.water, P.led, P.cal, P.poster].filter(Boolean));
+    for (const o of [...scene.children]) if (!o.isLight && !keep.has(o)) scene.remove(o);
+    const root = gltf.scene; scene.add(root);
+    root.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; if (o.material) o.material.side = THREE.FrontSide; } });
+    const byName = n => root.getObjectByName(n);
+    if (byName('SharpsLid')) { P.lid = byName('SharpsLid'); P.lid.material = P.lid.material.clone(); P.lid.material.emissive = new THREE.Color('#ff3b3b'); P.lid.material.emissiveIntensity = 0; }
+    if (byName('ClockHour')) P.hourHand = byName('ClockHour');
+    if (byName('ClockMin')) P.minHand = byName('ClockMin');
+    root.updateMatrixWorld(true);
+    for (const k of Object.keys(STATIONS)) { const e = byName('Station_' + k); if (e) { const v = new THREE.Vector3(); e.getWorldPosition(v); STATIONS[k].stand = V(v.x, 0, v.z); } }
+    scene.background = new THREE.Color('#1b2230');
   }
 
   // ---------- character billboard ----------
@@ -333,7 +352,9 @@ const BR = (() => {
     renderer.outputEncoding = THREE.sRGBEncoding; renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
     camera = new THREE.PerspectiveCamera(42, W / H, .05, 60);
+    const before = new Set(scene ? scene.children : []);
     buildRoom(); buildProps();
+    if ((tl.assets || {}).model) await useModel(tl.assets.model);
     const a = (tl.assets || {}).cx || {};
     const ph = await loadImg('data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="300"><rect x="30" y="80" width="40" height="200" fill="#2f9c96"/><circle cx="50" cy="45" r="30" fill="#e2b28e"/></svg>'));
     buildDoctor(a.body_front ? await loadImg(a.body_front) : ph, a.body_back ? await loadImg(a.body_back) : ph);
