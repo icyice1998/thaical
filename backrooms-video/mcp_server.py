@@ -43,10 +43,18 @@ STYLES["presenter-explainer"] = {
     "aspect": "9:16", "typical_length_s": [40, 120],
     "guide": os.path.join(HERE, "styles", "presenter-explainer.md"),
 }
+STYLES["character-explainer"] = {
+    "name": "Step-by-step explainer with your character in a 3D set",
+    "description": "Three.js cutaway room; your character walks between stations as a billboard; lip-synced host portrait "
+                   "in a corner circle; numbered step badges with source chips; lower-third captions; soft music bed.",
+    "aspect": "9:16", "typical_length_s": [40, 60],
+    "guide": os.path.join(HERE, "styles", "character-explainer.md"),
+}
+STATIONS = {"overview", "desk", "sink", "bed", "bedClose", "sharps", "center"}
 CARD_KINDS = {"title", "counter", "bars", "threshold", "checklist", "code", "numbers", "note"}
 SCENES = {"level0", "ward", "doors"}
 CUE_TYPES = {"scene", "walk", "lights", "flashlight", "entity", "shake", "glitch", "whiteout",
-             "mission", "toast", "title", "endcard", "card", "pose"}
+             "mission", "toast", "title", "endcard", "card", "pose", "step"}
 LOOKS = {"operator", "doctor", "entity"}
 DEFAULT_COLORS = ["#7fb8ff", "#ffd166", "#ff6b6b"]
 JOBS = {}
@@ -112,7 +120,7 @@ def list_voices(language: str = "th") -> dict:
 
 @mcp.tool()
 def create_project(title: str, subtitle: str = "", style: str = "backrooms-retro",
-                   watermark: str = "เรื่องสมมติ · ภาพวาดด้วยโค้ด", smooth: bool = True) -> dict:
+                   watermark: str = "เรื่องสมมติ · ภาพวาดด้วยโค้ด", smooth: bool = True, host: str = "") -> dict:
     """Create an empty project. Returns project_id used by every other tool.
     smooth=True: 60 fps and a 2x sharper 3D view (render takes about 3-4x longer); False: classic 30 fps pixel look."""
     if style not in STYLES:
@@ -122,7 +130,7 @@ def create_project(title: str, subtitle: str = "", style: str = "backrooms-retro
     os.makedirs(os.path.join(PROJECTS, pid, "build"), exist_ok=True)
     s = {"meta": {"title": title, "subtitle": subtitle, "style": style, "date": date.today().strftime("%b %d %Y").upper(),
                   "watermark": watermark, "fps": 60 if smooth else 30, "render_scale": 2 if smooth else 1,
-                  "lead_in": 1.2, "tail": 3.5},
+                  "lead_in": 1.2, "tail": 3.5, **({"host": host} if host else {})},
          "voices": {}, "lines": []}
     _save(pid, s)
     return {"project_id": pid, "path": os.path.join(PROJECTS, pid)}
@@ -152,6 +160,7 @@ def set_script(project_id: str, characters: dict, lines: list[dict]) -> dict:
              "color": c.get("color", DEFAULT_COLORS[i % 3]), "fallback": c.get("fallback", [])}
         if c.get("portrait_prompt"): v["portrait_prompt"] = c["portrait_prompt"]
         if c.get("images"): v["images"] = c["images"]
+        if c.get("language"): v["language"] = c["language"]
         if v["provider"] == "edge":
             v.update({"rate": c.get("rate", "+12%"), "pitch": c.get("pitch", "+0Hz")})
         voices[k] = v
@@ -188,6 +197,9 @@ def set_scenes(project_id: str, cues: list[dict], replace: bool = True) -> dict:
             raise ValueError(f"cue {c}: type must be one of {sorted(CUE_TYPES)}")
         if t == "card" and (not isinstance(c.get("value"), dict) or c["value"].get("kind") not in CARD_KINDS):
             raise ValueError(f"cue {c}: card value must be an object with kind in {sorted(CARD_KINDS)}")
+        if t == "step" and (not isinstance(c.get("value"), dict) or "n" not in c["value"] or "title" not in c["value"]
+                            or c["value"].get("station", "center") not in STATIONS):
+            raise ValueError(f"cue {c}: step value needs n, title and station in {sorted(STATIONS)}")
         if t == "scene" and c.get("value") not in SCENES:
             raise ValueError(f"cue {c}: scene must be one of {sorted(SCENES)}")
         cc = {k: c[k] for k in ("type", "value", "dur", "at", "offset", "sub") if k in c}

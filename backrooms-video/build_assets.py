@@ -249,6 +249,22 @@ def main():
         except (FileNotFoundError, OSError, KeyError) as e:
             out["warnings"].append(f"presenter: {e}")
 
+    # character-explainer: face_closed / face_open / body_front / body_back from one outfit row of the cast sheet
+    if s["meta"].get("style") == "character-explainer" and cs:
+        try:
+            import cutout
+            sheet = _load_user(cs["path"])
+            rows_all = cs.get("rows") or list(s["voices"])
+            row = cfg.get("outfit_row", rows_all.index(cs.get("explorer", rows_all[0])))
+            panels = cutout.slice_sheet(sheet, rows=len(rows_all), cols=4)[row]
+            cuts = {"face_closed": cutout.cut(panels[0], "face"), "face_open": cutout.cut(panels[1], "face"),
+                    "body_front": cutout.cut(panels[2], "body"), "body_back": cutout.cut(panels[3], "body")}
+            cutout.preview_on_dark(list(cuts.values()), os.path.join(BUILD, "cutout_preview.jpg"))
+            out["cx"] = {k: _data_url(v) for k, v in cuts.items()}
+            print(f"  character cut-outs: row {row} -> {', '.join(cuts)} (preview: build/cutout_preview.jpg)")
+        except Exception as e:  # noqa: BLE001
+            out["warnings"].append(f"cut-outs: {e}")
+
     json.dump(out, open(os.path.join(BUILD, "assets.json"), "w"))
     for w in out["warnings"]:
         print("  ! " + w)

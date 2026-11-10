@@ -201,13 +201,29 @@ def main():
             score *= am.get("volume", 0.5) / (np.max(np.abs(score)) or 1) * 0.5
             drone *= 0.35
             print(f"  music: {len(m) / SR:.1f}s loop, volume {am.get('volume', 0.5)}")
+    if meta.get("style", "backrooms-retro") != "backrooms-retro":
+        # explainers: no horror hum/drone/footsteps; a soft major-key pad instead (I-vi-IV-V, 4 s per chord)
+        hum[:] = 0; drone[:] = 0; noise_bed[:] = 0; sfx[:] = 0
+        prog = [(261.63, 329.63, 392.0, 493.88), (220.0, 261.63, 329.63, 392.0), (174.61, 220.0, 261.63, 329.63), (196.0, 246.94, 293.66, 392.0)]
+        pad = np.zeros(n, np.float32); bar = int(4 * SR)
+        for b0 in range(0, n, bar):
+            seg = np.arange(min(bar, n - b0)) / SR; ch = prog[(b0 // bar) % 4]
+            env_ = np.minimum(1, seg / 0.8) * np.minimum(1, (4 - seg) / 0.8)
+            pad[b0:b0 + len(seg)] = sum(np.sin(2 * np.pi * f0 * seg) + 0.3 * np.sin(2 * np.pi * f0 * 2 * seg) for f0 in ch) / 5 * env_
+        score = score if np.any(score) else pad * 0.05
+        for c in cues:
+            if c["type"] in ("step", "card"):  # soft two-note chime on each new step/card
+                d = 0.6; k_t = np.arange(int(d * SR)) / SR
+                put(c["t"], (np.sin(2 * np.pi * 880 * k_t) * (k_t < .12) + np.sin(2 * np.pi * 1320 * k_t) * (k_t >= .12)) * np.exp(-k_t * 6) * 0.06)
     duck_m = 1 - 0.6 * np.clip(venv / 0.05, 0, 1)
     mix = voice * 1.0 + (hum + drone + noise_bed) * duck + score * duck_m + sfx
     fade = np.minimum(1, np.minimum(tt / 0.5, (total - tt) / 1.5))
     mix = mix * fade
     mix /= max(1.0, np.max(np.abs(mix)) / 0.95)
     st = np.stack([mix, mix * 0.98], 1).astype(np.float32)
+    # loudness-normalise to -16 LUFS / -1.5 dBTP (short-video platforms)
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "f32le", "-ar", str(SR), "-ac", "2", "-i", "-",
+                    "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-ar", str(SR),
                     os.path.join(BUILD, "audio.wav")], input=st.tobytes(), check=True)
     print(f"timeline: {total:.1f}s, {nF} frames, {len(cues)} cues -> build/timeline.json, build/audio.wav")
 
