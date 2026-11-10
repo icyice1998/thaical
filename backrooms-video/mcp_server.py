@@ -36,9 +36,17 @@ STYLES = {
         "guide": os.path.join(HERE, "styles", "backrooms-retro.md"),
     },
 }
+STYLES["presenter-explainer"] = {
+    "name": "พิธีกรอธิบาย + กราฟิกเคลื่อนไหว",
+    "description": "Cut-out presenter at the bottom, animated info cards above (big counters, bar charts, threshold scales, "
+                   "checklists, typed code, number grids, paper notes), karaoke captions, dark navy look. For explainers.",
+    "aspect": "9:16", "typical_length_s": [40, 120],
+    "guide": os.path.join(HERE, "styles", "presenter-explainer.md"),
+}
+CARD_KINDS = {"title", "counter", "bars", "threshold", "checklist", "code", "numbers", "note"}
 SCENES = {"level0", "ward", "doors"}
 CUE_TYPES = {"scene", "walk", "lights", "flashlight", "entity", "shake", "glitch", "whiteout",
-             "mission", "toast", "title", "endcard"}
+             "mission", "toast", "title", "endcard", "card", "pose"}
 LOOKS = {"operator", "doctor", "entity"}
 DEFAULT_COLORS = ["#7fb8ff", "#ffd166", "#ff6b6b"]
 JOBS = {}
@@ -178,12 +186,14 @@ def set_scenes(project_id: str, cues: list[dict], replace: bool = True) -> dict:
             raise ValueError(f"cue {c}: bad line index")
         if t not in CUE_TYPES:
             raise ValueError(f"cue {c}: type must be one of {sorted(CUE_TYPES)}")
+        if t == "card" and (not isinstance(c.get("value"), dict) or c["value"].get("kind") not in CARD_KINDS):
+            raise ValueError(f"cue {c}: card value must be an object with kind in {sorted(CARD_KINDS)}")
         if t == "scene" and c.get("value") not in SCENES:
             raise ValueError(f"cue {c}: scene must be one of {sorted(SCENES)}")
-        cc = {k: c[k] for k in ("type", "value", "dur", "at", "offset") if k in c}
+        cc = {k: c[k] for k in ("type", "value", "dur", "at", "offset", "sub") if k in c}
         cc.setdefault("at", "start")
         s["lines"][i].setdefault("cues", []).append(cc)
-    if not any(c["type"] == "scene" for ln in s["lines"] for c in ln.get("cues", [])):
+    if s["meta"].get("style") == "backrooms-retro" and not any(c["type"] == "scene" for ln in s["lines"] for c in ln.get("cues", [])):
         s["lines"][0].setdefault("cues", []).insert(0, {"type": "scene", "value": "level0", "at": "start", "offset": -1.2})
     _save(project_id, s)
     return {"ok": True, "cues": sum(len(ln.get("cues", [])) for ln in s["lines"]), "next": "generate_voice"}
@@ -247,13 +257,12 @@ def set_cast_sheet(project_id: str, path: str, rows: list[str] | None = None, ex
                    portraits: str = "ai-photo") -> dict:
     """Use ONE image holding the whole cast (e.g. made in ChatGPT): a grid with one row per character and 4 equal
     columns: portrait mouth closed | portrait mouth open | full body front | full body back.
-    rows: character ids top to bottom (default: script order). explorer: who walks in 3D (default: first row).
+    rows: one id per row of the sheet, top to bottom, including rows not used in this episode (default: script order). explorer: who walks in 3D (default: first row).
     portraits: "ai-photo" (smooth, for photo/anime art) or "ai-pixel" (pixelated). Then run generate_assets."""
     s = _load(project_id)
-    rows = rows or list(s["voices"])
-    bad = [r for r in rows if r not in s["voices"]]
-    if bad:
-        raise ValueError(f"unknown characters {bad}; have {list(s['voices'])}")
+    rows = rows or list(s["voices"])  # list EVERY row of the sheet; rows naming no character here are skipped
+    if not any(r in s["voices"] for r in rows):
+        raise ValueError(f"no row matches a character; have {list(s['voices'])}")
     a = s.setdefault("assets", {})
     a["cast_sheet"] = {"path": path, "rows": rows, "explorer": explorer or rows[0]}
     a["portraits"] = portraits

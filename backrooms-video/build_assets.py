@@ -227,6 +227,28 @@ def main():
     elif os.path.exists(os.path.join(ADIR, "music.wav")):
         os.remove(os.path.join(ADIR, "music.wav"))
 
+    # presenter-explainer: high-res cut-outs of the presenter (one per pose)
+    if s["meta"].get("style") == "presenter-explainer":
+        poses = []
+        ps = cfg.get("pose_sheet")  # {"path": ..., "columns": 4, "rows": 1}: one pose per cell
+        try:
+            if ps:
+                sheet = _load_user(ps["path"]); nc, nr = ps.get("columns", 4), ps.get("rows", 1)
+                cw, ch = sheet.width / nc, sheet.height / nr
+                for r in range(nr):
+                    for c in range(nc):
+                        cell = sheet.crop((int((c + .03) * cw), int((r + .03) * ch), int((c + .97) * cw), int((r + .97) * ch)))
+                        poses.append(_sprite_from(cell, height=cell.height))
+            else:
+                who = cfg.get("presenter") or (cs or {}).get("explorer") or next(iter(s["voices"]))
+                src = (s["voices"][who].get("images") or {}).get("sprite_front") or sheet_imgs.get(who, {}).get("sprite_front")
+                if src is not None:
+                    im = _load_user(src); poses.append(_sprite_from(im, height=im.height))
+            out["presenter"] = [_data_url(p_) for p_ in poses if p_.getbbox()]
+            print(f"  presenter poses: {len(out['presenter'])}")
+        except (FileNotFoundError, OSError, KeyError) as e:
+            out["warnings"].append(f"presenter: {e}")
+
     json.dump(out, open(os.path.join(BUILD, "assets.json"), "w"))
     for w in out["warnings"]:
         print("  ! " + w)

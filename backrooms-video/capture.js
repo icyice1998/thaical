@@ -16,7 +16,8 @@ if (fs.existsSync(assetsFile)) tl.assets = JSON.parse(fs.readFileSync(assetsFile
 
 async function openPage(browser) {
   const page = await browser.newPage({ viewport: { width: 1080, height: 1920 } });
-  await page.goto('file://' + path.join(HERE, 'renderer.html'));
+  const pageFile = tl.meta.style === 'presenter-explainer' ? 'presenter.html' : 'renderer.html';
+  await page.goto('file://' + path.join(HERE, pageFile));
   await page.evaluate(t => BR.init(t), tl);
   return page;
 }
