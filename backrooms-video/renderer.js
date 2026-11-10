@@ -2,8 +2,10 @@
 // The 3D view is a textured raycaster at 270x295, upscaled 4x for the retro pixel look.
 const BR = (() => {
   const OUT_W = 1080, OUT_H = 1920;
-  const VIEW_H = 1180, W = 270, H = 295, SCALE = 4;
-  const FOV = 1.15, F = (W / 2) / Math.tan(FOV / 2);
+  const VIEW_H = 1180, BW = 270, BH = 295; // base (classic) view size; doors art is drawn in base units
+  let RS = 1, W = BW, H = BH, SCALE = 4;
+  const FOV = 1.15; let F = (W / 2) / Math.tan(FOV / 2);
+  const WALK_FRAMES = 8, STRIDE = 1.1; // one full walk cycle per 1.1 cells
   const T = 64; // texture size
 
   let TL, fps, out, octx, low, lctx, img, buf, zbuf;
@@ -148,7 +150,7 @@ const BR = (() => {
     R(g, '#222', 1, 3, 10, 3); R(g, '#555', 10, 2, 3, 5); R(g, '#ffe9a0', 13, 3, 1, 3);
   }
   function buildSprites() {
-    for (let p = 0; p < 4; p++) {
+    for (let p = 0; p < WALK_FRAMES; p++) {
       sprites['mindBack' + p] = canvasPix(20, 40, g => drawMind(g, 'back', p));
       sprites['mindFront' + p] = canvasPix(20, 40, g => drawMind(g, 'front', p));
     }
@@ -174,6 +176,12 @@ const BR = (() => {
     let i = 1; while (i < P.cum.length - 1 && P.cum[i] < s) i++;
     const a = P.pts[i - 1], b = P.pts[i], k = (s - P.cum[i - 1]) / ((P.cum[i] - P.cum[i - 1]) || 1);
     return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+  }
+  // average of nearby path points: turns become smooth arcs instead of sharp 90° corners
+  function smoothAt(P, s, r = 0.9, n = 9) {
+    let x = 0, y = 0;
+    for (let i = 0; i < n; i++) { const [px, py] = pathAt(P, s - r + 2 * r * i / (n - 1)); x += px; y += py; }
+    return [x / n, y / n];
   }
   function scaleSegs(segs, maxPre) {
     const pre = segs.slice(0, -1).reduce((a, s) => a + s[1], 0);
@@ -270,6 +278,7 @@ const BR = (() => {
   async function init(tl) {
     TL = tl; fps = tl.meta.fps;
     out = document.getElementById('out'); octx = out.getContext('2d');
+    RS = tl.meta.render_scale || 1; W = BW * RS; H = BH * RS; SCALE = 4 / RS; F = (W / 2) / Math.tan(FOV / 2);
     low = document.createElement('canvas'); low.width = W; low.height = H; lctx = low.getContext('2d');
     img = lctx.createImageData(W, H); buf = new Uint32Array(img.data.buffer); zbuf = new Float32Array(W);
     buildTextures(); buildSprites(); buildOverlays();
@@ -301,10 +310,10 @@ const BR = (() => {
       const sc = scenes[st.scene[f]];
       if (!sc.P) { camTrack.push({ scene: sc.name }); prevDir = null; continue; }
       const gS = Math.min(st.prog[f] + GIRL_AHEAD, sc.P.len - 0.2), cS = gS - GIRL_AHEAD;
-      const [x, y] = pathAt(sc.P, cS), [gx, gy] = pathAt(sc.P, gS);
-      const a = pathAt(sc.P, cS - 0.6), b = pathAt(sc.P, cS + 2.4);
+      const [x, y] = smoothAt(sc.P, cS), [gx, gy] = smoothAt(sc.P, gS);
+      const a = smoothAt(sc.P, cS - 0.6), b = smoothAt(sc.P, cS + 2.4);
       let dx = b[0] - a[0], dy = b[1] - a[1]; const n = Math.hypot(dx, dy) || 1; dx /= n; dy /= n;
-      if (prevDir) { dx = prevDir[0] * 0.8 + dx * 0.2; dy = prevDir[1] * 0.8 + dy * 0.2; const m = Math.hypot(dx, dy); dx /= m; dy /= m; }
+      if (prevDir) { const k = 1 - Math.pow(0.8, 30 / fps); dx = prevDir[0] * (1 - k) + dx * k; dy = prevDir[1] * (1 - k) + dy * k; const m = Math.hypot(dx, dy); dx /= m; dy /= m; }
       prevDir = [dx, dy];
       camTrack.push({ scene: sc.name, x, y, dx, dy, gx, gy, cS });
     }
@@ -342,11 +351,31 @@ const BR = (() => {
     const ex = (a.sprites || {}).explorer;
     if (ex) { // user's explorer sprite replaces the code-drawn one; walk = 1px bob on alternate frames
       const fr = await loadImg(ex.front), bk = await loadImg(ex.back);
-      const mk = (im, bob) => canvasPix(im.width, im.height + 1, g => g.drawImage(im, 0, bob));
-      for (let p = 0; p < 4; p++) { sprites['mindFront' + p] = mk(fr, p % 2); sprites['mindBack' + p] = mk(bk, p % 2); }
-      sprites.mindFront = sprites.mindFront0; sprites.mindBack0 = sprites.mindBack0;
+      for (let p = 0; p < WALK_FRAMES; p++) { sprites['mindFront' + p] = walkFrame(fr, p); sprites['mindBack' + p] = walkFrame(bk, p); }
+      sprites.mindFront = sprites.mindFront0;
     }
     if (a.cover_art) coverArt = await loadImg(a.cover_art);
+  }
+
+  // Walk cycle from one still image: split at the hips, lift/shorten each leg in turn, bob and sway the body.
+  function walkFrame(im, p) {
+    const w0 = im.width, h0 = im.height, padX = Math.ceil(w0 * 0.06), padY = Math.ceil(h0 * 0.05);
+    return canvasPix(w0 + padX * 2, h0 + padY, g => {
+      const ph = p / WALK_FRAMES * Math.PI * 2, sn = Math.sin(ph);
+      const bob = Math.abs(Math.cos(ph)) * h0 * 0.018;           // body highest when legs pass each other
+      const sway = sn * w0 * 0.025, hip = Math.round(h0 * 0.54), legH = h0 - hip;
+      const liftL = Math.max(0, sn) * h0 * 0.035, liftR = Math.max(0, -sn) * h0 * 0.035;
+      const ox = padX + sway, oy = padY - bob;
+      const half = Math.floor(w0 / 2);
+      g.imageSmoothingEnabled = true;
+      // legs first (behind the torso edge)
+      g.drawImage(im, 0, hip, half, legH, ox - sn * w0 * 0.02, oy + hip, half, legH - liftL);
+      g.drawImage(im, half, hip, w0 - half, legH, ox + half + sn * w0 * 0.02, oy + hip, w0 - half, legH - liftR);
+      // torso + head with a tiny counter-rotation
+      g.save(); g.translate(ox + w0 / 2, oy + hip); g.rotate(-sn * 0.025);
+      g.drawImage(im, 0, 0, w0, hip + 2, -w0 / 2, -hip, w0, hip + 2);
+      g.restore();
+    });
   }
 
   function castDist(G, px, py, dx, dy) {
@@ -367,8 +396,9 @@ const BR = (() => {
     const flick = lights > 0 && lights < 1 ? (hash(f, 9) < 0.35 ? 0.35 : 1) : (hash(f >> 1, 5) < 0.015 ? 0.85 : 1);
     const amb = (0.04 + 0.96 * lights) * flick;
     const moving = Math.abs(st.speed[f]) > 0.05;
-    const shake = cueActive('shake', t).length ? (hash(f, 1) - 0.5) * 10 : 0;
-    const horizon = Math.round(H / 2 + (moving ? Math.sin(c.cS * Math.PI * 2 * 1.8) * 1.6 : 0) + shake);
+    const shake = cueActive('shake', t).length ? (hash(f, 1) - 0.5) * 10 * RS : 0;
+    const spd = Math.min(1, Math.abs(st.speed[f]) / 0.6);
+    const horizon = H / 2 + Math.cos(c.cS / STRIDE * Math.PI * 4) * 1.4 * RS * spd + shake;
     const camZ = 0.5;
     const px = c.x, py = c.y, dx = c.dx, dy = c.dy;
     const plx = -dy * Math.tan(FOV / 2), ply = dx * Math.tan(FOV / 2);
@@ -445,7 +475,7 @@ const BR = (() => {
     if (sc.pickup && t < sc.pickup.until) list.push(sc.pickup);
     const ent = cueState('entity', t);
     if (sc.entity && ent && ent.value) list.push({ ...sc.entity, emissiveFace: 1 });
-    const phase = moving ? Math.floor(c.cS * 4) % 4 : 0;
+    const phase = moving ? ((Math.floor(c.cS / STRIDE * WALK_FRAMES) % WALK_FRAMES) + WALK_FRAMES) % WALK_FRAMES : 0;
     const back = st.speed[f] > 0.05;
     list.push({ k: (back ? 'mindBack' : 'mindFront') + phase, x: c.gx, y: c.gy, h: 0.62, w: 0.31 });
     const inv = 1 / (plx * dy - dx * ply);
@@ -479,7 +509,8 @@ const BR = (() => {
 
   // doors scene: flat pixel illustration
   function renderDoors(f, t) {
-    const g = lctx;
+    const g = lctx; g.save(); g.scale(RS, RS);
+    const W = BW, H = BH;
     const fl = hash(f >> 1, 4);
     g.fillStyle = '#d9dcd6'; g.fillRect(0, 0, W, H);
     g.fillStyle = '#c3c7c0'; g.fillRect(0, 0, W, 40);
@@ -499,8 +530,10 @@ const BR = (() => {
     });
     // มายด์ from behind, centred
     const s = sprites.mindBack0;
-    g.imageSmoothingEnabled = false; g.drawImage(s.c, W / 2 - 20, 196, 40, 80);
+    const sh = 80, sw = sh * s.w / s.h, idle = Math.sin(t * 2.2) * 0.6;
+    g.imageSmoothingEnabled = s.h > 60; g.drawImage(s.c, W / 2 - sw / 2, 196 + idle, sw, sh);
     g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(W / 2 - 16, 274, 32, 4);
+    g.restore();
   }
 
   // ---------- overlays ----------
@@ -583,7 +616,7 @@ const BR = (() => {
     const titleOn = titleCue && t < titleCue.t + titleCue.dur;
     if (c.scene === 'doors' && !titleOn) {
       const labels = [['กลับบ้าน', '#bff5cf'], ['ลึกลงไป', '#e6e6e6'], ['ห้ามเปิด', '#ff6a6a']];
-      labels.forEach(([txt, col], i) => outlined(g, txt, (22 + 31 + i * 82) * SCALE, 70 * SCALE + 6, '700 44px Kanit', col, '#111', 8));
+      labels.forEach(([txt, col], i) => outlined(g, txt, (22 + 31 + i * 82) * 4, 70 * 4 + 6, '700 44px Kanit', col, '#111', 8));
     }
     // title card
     const tc = TL.cues.find(c => c.type === 'title');
@@ -614,10 +647,10 @@ const BR = (() => {
 
   function postFX(f, t) {
     const g = octx;
-    g.drawImage(noise[f % 6], 0, 0, OUT_W, VIEW_H);
+    g.drawImage(noise[Math.floor(t * 24) % 6], 0, 0, OUT_W, VIEW_H);
     g.drawImage(scan, 0, 0); g.drawImage(vign, 0, 0);
     // occasional VHS tracking line
-    if (hash(f >> 2, 77) < 0.08) { const y = Math.floor(hash(f, 78) * VIEW_H); g.drawImage(out, 0, y, OUT_W, 18, 14, y, OUT_W, 18); }
+    const tf = Math.floor(t * 30); if (hash(tf >> 2, 77) < 0.08) { const y = Math.floor(hash(tf, 78) * VIEW_H); g.drawImage(out, 0, y, OUT_W, 18, 14, y, OUT_W, 18); }
     for (const gl of cueActive('glitch', t)) {
       const k = Math.sin(Math.PI * (t - gl.t) / gl.dur);
       if (hash(f, 31) < 0.6) { // yellow chevron flash
@@ -731,16 +764,20 @@ const BR = (() => {
       const L = TL.lines.find(l => l.who === w && t >= l.start && t < l.end);
       const talk = !!L, mf = L ? L.mouth[Math.floor((t - L.start) * fps)] || 0 : 0;
       const blink = (Math.floor(t * fps) + i * 37) % 112 < 4;
-      const ph = Math.round(pw * 1.1), x = left + i * (pw + gap), bounce = talk ? Math.sin(t * 18) * 3 : 0, y = y0 + 40 - bounce;
+      const ph = Math.round(pw * 1.1), x = left + i * (pw + gap), bounce = talk ? Math.sin(t * 7) * 2 : 0, y = y0 + 40 - bounce;
       g.imageSmoothingEnabled = false;
       g.globalAlpha = talk ? 1 : 0.62;
       const look = TL.voices[w].look || (i === 0 ? 'operator' : 'doctor');
       const ap = assetPortraits[w];
       if (ap) { // image portrait: lip-sync if a talk frame exists, else pulse + level meter
-        const k = 1 + 0.02 * mf;
+        const fi = Math.floor((t - (L ? L.start : 0)) * fps);
+        const lv = L ? ((L.mouth[fi] || 0) + (L.mouth[fi - 1] || 0) + (L.mouth[fi + 1] || 0)) / 3 : 0; // smoothed level
+        const k = 1 + 0.012 * lv + 0.006 * Math.sin(t * 1.7 + i * 2); // speaking pulse + idle breathing
+        const dx = x - pw * (k - 1) / 2, dy = y - ph * (k - 1) + Math.sin(t * 1.3 + i) * 1.5;
         g.save(); g.beginPath(); g.rect(x, y, pw, ph); g.clip();
         g.imageSmoothingEnabled = ap.mode !== 'ai-pixel';
-        g.drawImage(ap.talk && mf > 0.33 ? ap.talk : ap.img, x - pw * (k - 1) / 2, y - ph * (k - 1), pw * k, ph * k);
+        g.drawImage(ap.img, dx, dy, pw * k, ph * k);
+        if (ap.talk && lv > 0.08) { g.globalAlpha *= clamp((lv - 0.08) / 0.3, 0, 1); g.drawImage(ap.talk, dx, dy, pw * k, ph * k); }
         g.restore(); g.imageSmoothingEnabled = false;
         if (talk && !ap.talk) for (let b = 0; b < 7; b++) {
           const lv = L.mouth[Math.max(0, Math.floor((t - L.start) * fps) - b)] || 0;

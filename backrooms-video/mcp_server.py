@@ -104,15 +104,17 @@ def list_voices(language: str = "th") -> dict:
 
 @mcp.tool()
 def create_project(title: str, subtitle: str = "", style: str = "backrooms-retro",
-                   watermark: str = "เรื่องสมมติ · ภาพวาดด้วยโค้ด") -> dict:
-    """Create an empty project. Returns project_id used by every other tool."""
+                   watermark: str = "เรื่องสมมติ · ภาพวาดด้วยโค้ด", smooth: bool = True) -> dict:
+    """Create an empty project. Returns project_id used by every other tool.
+    smooth=True: 60 fps and a 2x sharper 3D view (render takes about 3-4x longer); False: classic 30 fps pixel look."""
     if style not in STYLES:
         raise ValueError(f"unknown style; choose from {list(STYLES)}")
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:24] or "clip"
     pid = f"{time.strftime('%Y%m%d-%H%M%S')}-{slug}"
     os.makedirs(os.path.join(PROJECTS, pid, "build"), exist_ok=True)
     s = {"meta": {"title": title, "subtitle": subtitle, "style": style, "date": date.today().strftime("%b %d %Y").upper(),
-                  "watermark": watermark, "fps": 30, "lead_in": 1.2, "tail": 3.5},
+                  "watermark": watermark, "fps": 60 if smooth else 30, "render_scale": 2 if smooth else 1,
+                  "lead_in": 1.2, "tail": 3.5},
          "voices": {}, "lines": []}
     _save(pid, s)
     return {"project_id": pid, "path": os.path.join(PROJECTS, pid)}

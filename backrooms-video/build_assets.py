@@ -110,7 +110,7 @@ def _portrait_from(im, mode):
     return im.resize((300, 330), Image.LANCZOS)
 
 
-def _sprite_from(im, height=64):
+def _sprite_from(im, height=160):
     im = _key_out(im)
     bbox = im.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
     if bbox: im = im.crop(bbox)
